@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: ZIp-da-project-tak
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX,UTC} %-5level [%thread] [traceId=%X{traceId}] %logger{36} - %msg%n"
