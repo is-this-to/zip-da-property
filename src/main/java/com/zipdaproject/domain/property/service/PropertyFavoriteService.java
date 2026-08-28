@@ -1,6 +1,6 @@
-package com.zipdaprojecttak.domain.property.service;
+package com.zipdaproject.domain.property.service;
 
-import com.zipdaprojecttak.domain.property.repository.PropertyFavoriteRepository;
+import com.zipdaproject.domain.property.repository.PropertyFavoriteRepository;
 import org.springframework.stereotype.Service;
 
 @Service

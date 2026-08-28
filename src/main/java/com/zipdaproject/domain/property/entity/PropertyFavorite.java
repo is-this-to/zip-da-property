@@ -1,4 +1,4 @@
-package com.zipdaprojecttak.domain.property.entity;
+package com.zipdaproject.domain.property.entity;
 
 import jakarta.persistence.*;
 
