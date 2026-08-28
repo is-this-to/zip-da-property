@@ -1,4 +1,4 @@
-package com.zipdaprojecttak;
+package com.zipdaproperty;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
