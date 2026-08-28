@@ -56,6 +56,10 @@ dependencies {
     // DB
     runtimeOnly 'com.mysql:mysql-connector-j'
 
+    // Kafka
+    implementation 'org.springframework.boot:spring-boot-starter-kafka'
+    testImplementation 'org.springframework.kafka:spring-kafka-test'
+
     // junit
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
