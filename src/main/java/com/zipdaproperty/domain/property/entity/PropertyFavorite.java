@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.property.entity;
 
+import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.entity.BaseAuditEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -30,4 +31,13 @@ public class PropertyFavorite extends BaseAuditEntity {
     )
     private String activeFavoriteKey;
 
+    public PropertyFavorite(
+            Long memberId,
+            Long propertyId,
+            ActorContext actorContext
+    ) {
+        super(actorContext);
+        this.memberId = memberId;
+        this.propertyId = propertyId;
+    }
 }

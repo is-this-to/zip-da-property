@@ -12,4 +12,7 @@ public interface PropertyFavoriteRepository
             Long memberId,
             Long propertyId
     );
+
+    long countByPropertyIdAndDeletedAtIsNull(Long propertyId);
+
 }
