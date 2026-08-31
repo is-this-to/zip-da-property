@@ -2,16 +2,26 @@ package com.zipdaproperty.domain.property.entity;
 
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.entity.BaseAuditEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+
+import java.time.Instant;
 
 @Getter
 @Entity
 @Table(name = "property_favorite")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PropertyFavorite extends BaseAuditEntity {
+
+    private static final String FAVORITE_REMOVED_REASON =
+            "FAVORITE_REMOVED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -39,5 +49,20 @@ public class PropertyFavorite extends BaseAuditEntity {
         super(actorContext);
         this.memberId = memberId;
         this.propertyId = propertyId;
+    }
+
+    public void remove(
+            ActorContext actorContext,
+            Instant deletedAt
+    ) {
+        if (isDeleted()) {
+            return;
+        }
+
+        recordDeletion(
+                actorContext,
+                deletedAt,
+                FAVORITE_REMOVED_REASON
+        );
     }
 }
