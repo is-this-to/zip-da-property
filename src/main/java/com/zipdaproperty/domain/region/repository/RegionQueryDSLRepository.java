@@ -38,4 +38,25 @@ public class RegionQueryDSLRepository {
                 .orderBy(region.regionName.asc())
                 .fetch();
     }
+    public List<RegionSummaryResponse> findChildRegions(
+            Long parentRegionId
+    ){
+        return jpaQueryFactory
+                .select(Projections.constructor(
+                        RegionSummaryResponse.class,
+                        region.regionId,
+                        region.regionCode,
+                        region.regionName,
+                        region.regionLevel,
+                        region.regionType,
+                        region.hasChildren
+                ))
+                .from(region)
+                .where(
+                        region.parentRegionId.eq(parentRegionId),
+                        region.isActive.isTrue()
+                )
+                .orderBy(region.regionName.asc())
+                .fetch();
+    }
 }
