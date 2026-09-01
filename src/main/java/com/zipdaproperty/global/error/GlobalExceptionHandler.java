@@ -8,6 +8,7 @@ import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -158,6 +159,21 @@ public class GlobalExceptionHandler {
 
         return generateErrorResponse(
                 CustomResponseCode.NOT_FOUND_RESOURCE
+        );
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<GlobalResponseDTO<Void>> handleOptimisticLockingFailureException(
+            OptimisticLockingFailureException exception
+    ) {
+        log.warn(
+                "{}: {}",
+                CustomResponseCode.VERSION_CONFLICT.name(),
+                exception.getMessage()
+        );
+
+        return generateErrorResponse(
+                CustomResponseCode.VERSION_CONFLICT
         );
     }
 
