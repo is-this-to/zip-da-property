@@ -1,9 +1,9 @@
-package com.zipdaproperty.domain.property.service;
+package com.zipdaproperty.domain.favorite.service;
 
-import com.zipdaproperty.domain.property.entity.PropertyFavorite;
-import com.zipdaproperty.domain.property.repository.PropertyFavoriteRepository;
-import com.zipdaproperty.domain.property.repository.PropertyFavoriteTargetQueryRepository;
-import com.zipdaproperty.domain.property.response.PropertyFavoriteUpdateResponse;
+import com.zipdaproperty.domain.favorite.entity.PropertyFavorite;
+import com.zipdaproperty.domain.favorite.repository.PropertyFavoriteRepository;
+import com.zipdaproperty.domain.favorite.repository.PropertyFavoriteTargetQueryRepository;
+import com.zipdaproperty.domain.favorite.response.PropertyFavoriteUpdateResponse;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
@@ -17,13 +17,13 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-public class PropertyFavoriteService {
+public class PropertyFavoriteCommandService {
 
     private final PropertyFavoriteRepository propertyFavoriteRepository;
     private final PropertyFavoriteTargetQueryRepository propertyFavoriteTargetQueryRepository;
 
     @Transactional
-    public PropertyFavoriteUpdateResponse updateFavorite(
+    public PropertyFavoriteUpdateResponse updateFavoriteInTransaction(
             Long propertyId,
             boolean favorite,
             ActorContext actorContext
@@ -39,7 +39,7 @@ public class PropertyFavoriteService {
                         );
 
         if (favorite && activeFavorite.isEmpty()) {
-            propertyFavoriteRepository.save(
+            propertyFavoriteRepository.saveAndFlush(
                     new PropertyFavorite(
                             actorContext.memberId(),
                             propertyId,
@@ -87,9 +87,11 @@ public class PropertyFavoriteService {
                 propertyFavoriteTargetQueryRepository
                         .existsPubliclyAvailable(propertyId);
 
-        throw new BusinessException(
-                CustomResponseCode.FAVORITE_TARGET_UNAVAILABLE,
-                "찜 가능한 매물이 아닙니다."
-        );
+        if (!publiclyAvailable) {
+            throw new BusinessException(
+                    CustomResponseCode.FAVORITE_TARGET_UNAVAILABLE,
+                    "찜 가능한 매물이 아닙니다."
+            );
         }
     }
+}

@@ -1,4 +1,4 @@
-package com.zipdaproperty.domain.property.entity;
+package com.zipdaproperty.domain.favorite.entity;
 
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.entity.BaseAuditEntity;
@@ -36,6 +36,7 @@ public class PropertyFavorite extends BaseAuditEntity {
 
     @Column(
             name = "active_favorite_key",
+            length = 150,
             insertable = false,
             updatable = false
     )

@@ -1,4 +1,4 @@
-package com.zipdaproperty.domain.property.repository;
+package com.zipdaproperty.domain.favorite.repository;
 
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;

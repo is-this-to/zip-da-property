@@ -1,4 +1,4 @@
-package com.zipdaproperty.domain.property.response;
+package com.zipdaproperty.domain.favorite.response;
 
 import com.zipdaproperty.global.id.TsidString;
 

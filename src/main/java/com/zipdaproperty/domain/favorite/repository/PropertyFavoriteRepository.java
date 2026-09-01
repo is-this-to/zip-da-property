@@ -1,6 +1,6 @@
-package com.zipdaproperty.domain.property.repository;
+package com.zipdaproperty.domain.favorite.repository;
 
-import com.zipdaproperty.domain.property.entity.PropertyFavorite;
+import com.zipdaproperty.domain.favorite.entity.PropertyFavorite;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;

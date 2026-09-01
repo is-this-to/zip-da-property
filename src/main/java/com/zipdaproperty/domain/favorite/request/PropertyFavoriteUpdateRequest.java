@@ -1,4 +1,4 @@
-package com.zipdaproperty.domain.property.request;
+package com.zipdaproperty.domain.favorite.request;
 
 import jakarta.validation.constraints.NotNull;
 

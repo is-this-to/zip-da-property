@@ -1,8 +1,8 @@
-package com.zipdaproperty.domain.property.controller;
+package com.zipdaproperty.domain.favorite.controller;
 
-import com.zipdaproperty.domain.property.request.PropertyFavoriteUpdateRequest;
-import com.zipdaproperty.domain.property.response.PropertyFavoriteUpdateResponse;
-import com.zipdaproperty.domain.property.service.PropertyFavoriteService;
+import com.zipdaproperty.domain.favorite.request.PropertyFavoriteUpdateRequest;
+import com.zipdaproperty.domain.favorite.response.PropertyFavoriteUpdateResponse;
+import com.zipdaproperty.domain.favorite.service.PropertyFavoriteService;
 import com.zipdaproperty.global.config.openapi.CustomApiResponse;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.response.GlobalResponseDTO;
