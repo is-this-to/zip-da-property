@@ -3,8 +3,10 @@ package com.zipdaproperty.domain.property.controller;
 import com.zipdaproperty.domain.property.request.PropertyFavoriteUpdateRequest;
 import com.zipdaproperty.domain.property.response.PropertyFavoriteUpdateResponse;
 import com.zipdaproperty.domain.property.service.PropertyFavoriteService;
+import com.zipdaproperty.global.config.openapi.CustomApiResponse;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.response.GlobalResponseDTO;
+import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
@@ -27,9 +29,13 @@ public class PropertyFavoriteController {
 
     @PutMapping("/{propertyId}/favorite")
     @PreAuthorize("hasAnyRole('USER', 'AGENT')")
-    public ResponseEntity<
-            GlobalResponseDTO<PropertyFavoriteUpdateResponse>
-            > updateFavorite(
+    @CustomApiResponse({
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.UNAUTHENTICATED,
+            CustomResponseCode.FORBIDDEN,
+            CustomResponseCode.FAVORITE_TARGET_UNAVAILABLE
+    })
+    public ResponseEntity<GlobalResponseDTO<PropertyFavoriteUpdateResponse>> updateFavorite(
             @PathVariable
             @Positive(message = "매물 ID는 0보다 커야 합니다.")
             Long propertyId,

@@ -28,6 +28,9 @@ public enum CustomResponseCode {
     PROPERTY_CREATE_NOT_ALLOWED(HttpStatus.FORBIDDEN, "P11"),
     PROPERTY_OWNERSHIP_REQUIRED(HttpStatus.FORBIDDEN, "P12"),
 
+    // 장수린 에러코드 추가
+    FAVORITE_TARGET_UNAVAILABLE(HttpStatus.NOT_FOUND, "P13"),
+
     // 파일 처리 관련
     FILE_MANAGED_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "E40"),
 

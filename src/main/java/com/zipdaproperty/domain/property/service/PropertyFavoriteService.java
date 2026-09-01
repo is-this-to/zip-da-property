@@ -7,7 +7,6 @@ import com.zipdaproperty.domain.property.response.PropertyFavoriteUpdateResponse
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
-import com.zipdaproperty.global.error.custom.business.NotFoundResourceException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -88,10 +87,9 @@ public class PropertyFavoriteService {
                 propertyFavoriteTargetQueryRepository
                         .existsPubliclyAvailable(propertyId);
 
-        if (!publiclyAvailable) {
-            throw new NotFoundResourceException(
-                    "찜 가능한 매물이 아닙니다."
-            );
+        throw new BusinessException(
+                CustomResponseCode.FAVORITE_TARGET_UNAVAILABLE,
+                "찜 가능한 매물이 아닙니다."
+        );
         }
     }
-}
