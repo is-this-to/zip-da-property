@@ -1,11 +1,13 @@
 package com.zipdaproperty.domain.property.entity;
 
+import com.zipdaproperty.domain.property.command.PropertyCreateCommand;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.constant.PublisherType;
 import com.zipdaproperty.domain.property.constant.TransactionStatus;
 import com.zipdaproperty.domain.property.constant.TransactionType;
 import com.zipdaproperty.domain.property.constant.VerificationStatus;
+import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.entity.BaseAuditEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -202,4 +204,53 @@ public class Property extends BaseAuditEntity {
             columnDefinition = "DATETIME(6)"
     )
     private Instant publishedAt;
+
+    private Property(
+            Long propertyId,
+            PropertyCreateCommand command,
+            ActorContext actorContext
+    ) {
+        super(actorContext);
+        this.propertyId = propertyId;
+        this.regionId = command.regionId();
+        this.apartmentComplexId = command.apartmentComplexId();
+        this.authorMemberId = actorContext.memberId();
+        this.publisherType = command.publisherType();
+        this.propertyType = command.propertyType();
+        this.transactionType = command.transactionType();
+        this.salePrice = command.salePrice();
+        this.deposit = command.deposit();
+        this.monthlyRent = command.monthlyRent();
+        this.maintenanceFee = command.maintenanceFee();
+        this.supplyArea = command.supplyArea();
+        this.exclusiveArea = command.exclusiveArea();
+        this.roomCount = command.roomCount();
+        this.bathroomCount = command.bathroomCount();
+        this.floor = command.floor();
+        this.totalFloor = command.totalFloor();
+        this.floorCondition = command.floorCondition();
+        this.direction = command.direction();
+        this.approvalDate = command.approvalDate();
+        this.buildingUse = command.buildingUse();
+        this.isParkingAvailable = command.isParkingAvailable();
+        this.hasElevator = command.hasElevator();
+        this.isPetAllowed = command.isPetAllowed();
+        this.title = command.title();
+        this.description = command.description();
+        this.publicationStatus = PublicationStatus.IN_REVIEW;
+        this.transactionStatus = TransactionStatus.AVAILABLE;
+        this.verificationStatus = VerificationStatus.UNVERIFIED;
+    }
+
+    public static Property create(
+            Long propertyId,
+            PropertyCreateCommand command,
+            ActorContext actorContext
+    ) {
+        return new Property(
+                propertyId,
+                command,
+                actorContext
+        );
+    }
 }
