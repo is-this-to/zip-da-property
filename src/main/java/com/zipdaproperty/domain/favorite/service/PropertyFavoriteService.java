@@ -2,6 +2,7 @@ package com.zipdaproperty.domain.favorite.service;
 
 import com.zipdaproperty.domain.favorite.response.PropertyFavoriteUpdateResponse;
 import com.zipdaproperty.global.context.ActorContext;
+import com.zipdaproperty.domain.favorite.repository.PropertyFavoriteListQueryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;

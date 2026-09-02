@@ -33,7 +33,7 @@ public class PropertyFavoriteCommandService {
 
         Optional<PropertyFavorite> activeFavorite =
                 propertyFavoriteRepository
-                        .findByMemberIdAndPropertyIdAndDeletedAtIsNull(
+                        .findByMemberIdAndPropertyId(
                                 actorContext.memberId(),
                                 propertyId
                         );
@@ -60,7 +60,7 @@ public class PropertyFavoriteCommandService {
 
         long favoriteCount =
                 propertyFavoriteRepository
-                        .countByPropertyIdAndDeletedAtIsNull(propertyId);
+                        .countByPropertyId(propertyId);
 
         return new PropertyFavoriteUpdateResponse(
                 propertyId,

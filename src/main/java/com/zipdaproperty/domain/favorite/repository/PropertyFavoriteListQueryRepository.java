@@ -1,14 +1,14 @@
 package com.zipdaproperty.domain.favorite.repository;
 
 import com.querydsl.core.types.Projections;
-import com.querydsl.core.types.dsl.BooleanExpression;
+import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import com.zipdaproperty.domain.favorite.entity.QPropertyFavorite;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.constant.TransactionStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
-import java.time.Instant;
 import java.util.List;
 
 import static com.zipdaproperty.domain.favorite.entity.QPropertyFavorite.propertyFavorite;
@@ -22,16 +22,32 @@ public class PropertyFavoriteListQueryRepository {
 
     public List<PropertyFavoriteListQueryRow> findMyFavorites(
             Long memberId,
-            Instant lastFavoritedAt,
-            Long lastPropertyId,
+            long offset,
             int limit
     ) {
+        QPropertyFavorite countedFavorite =
+                new QPropertyFavorite("countedFavorite");
         return queryFactory
                 .select(
                         Projections.constructor(
                                 PropertyFavoriteListQueryRow.class,
                                 propertyFavorite.propertyId,
-                                propertyFavorite.createdAt
+                                property.propertyType,
+                                property.transactionType,
+                                property.salePrice,
+                                property.deposit,
+                                property.monthlyRent,
+                                property.exclusiveArea,
+                                property.floor,
+                                property.publisherType,
+                                JPAExpressions
+                                        .select(countedFavorite.count())
+                                        .from(countedFavorite)
+                                        .where(
+                                                countedFavorite.propertyId.eq(
+                                                        property.propertyId
+                                                )
+                                        )
                         )
                 )
                 .from(propertyFavorite)
@@ -43,7 +59,6 @@ public class PropertyFavoriteListQueryRepository {
                 )
                 .where(
                         propertyFavorite.memberId.eq(memberId),
-                        propertyFavorite.deletedAt.isNull(),
                         property.deletedAt.isNull(),
                         property.publicationStatus.eq(
                                 PublicationStatus.PUBLISHED
@@ -51,42 +66,14 @@ public class PropertyFavoriteListQueryRepository {
                         property.transactionStatus.in(
                                 TransactionStatus.AVAILABLE,
                                 TransactionStatus.RESERVED
-                        ),
-                        cursorCondition(
-                                lastFavoritedAt,
-                                lastPropertyId
                         )
                 )
                 .orderBy(
                         propertyFavorite.createdAt.desc(),
                         propertyFavorite.propertyId.desc()
                 )
+                .offset(offset)
                 .limit(limit)
                 .fetch();
-    }
-
-    private BooleanExpression cursorCondition(
-            Instant lastFavoritedAt,
-            Long lastPropertyId
-    ) {
-        if (lastFavoritedAt == null && lastPropertyId == null) {
-            return null;
-        }
-
-        if (lastFavoritedAt == null || lastPropertyId == null) {
-            throw new IllegalArgumentException(
-                    "cursor 기준값은 함께 전달되어야 합니다."
-            );
-        }
-
-        return propertyFavorite.createdAt.lt(lastFavoritedAt)
-                .or(
-                        propertyFavorite.createdAt.eq(lastFavoritedAt)
-                                .and(
-                                        propertyFavorite.propertyId.lt(
-                                                lastPropertyId
-                                        )
-                                )
-                );
     }
 }

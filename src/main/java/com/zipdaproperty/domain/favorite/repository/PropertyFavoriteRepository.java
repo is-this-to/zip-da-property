@@ -8,11 +8,11 @@ import java.util.Optional;
 public interface PropertyFavoriteRepository
         extends JpaRepository<PropertyFavorite, Long> {
 
-    Optional<PropertyFavorite> findByMemberIdAndPropertyIdAndDeletedAtIsNull(
+    Optional<PropertyFavorite> findByMemberIdAndPropertyId(
             Long memberId,
             Long propertyId
     );
 
-    long countByPropertyIdAndDeletedAtIsNull(Long propertyId);
+    long countByPropertyId(Long propertyId);
 
 }

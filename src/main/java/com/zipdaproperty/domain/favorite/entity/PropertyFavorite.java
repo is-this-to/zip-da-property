@@ -11,11 +11,13 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.Filter;
 
 import java.time.Instant;
 
 @Getter
 @Entity
+@Filter(name = "softDelete")
 @Table(name = "property_favorite")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PropertyFavorite extends BaseAuditEntity {
