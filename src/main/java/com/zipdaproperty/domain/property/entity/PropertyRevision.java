@@ -2,6 +2,7 @@ package com.zipdaproperty.domain.property.entity;
 
 import com.zipdaproperty.domain.property.constant.RevisionChangeScope;
 import com.zipdaproperty.domain.property.constant.RevisionChangeType;
+import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.entity.BaseAuditEntity;
 import jakarta.persistence.Column;
@@ -25,6 +26,8 @@ import java.time.Instant;
 @Table(name = "property_revision")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PropertyRevision extends BaseAuditEntity {
+
+    private static final int INITIAL_SNAPSHOT_SCHEMA_VERSION = 1;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -136,4 +139,46 @@ public class PropertyRevision extends BaseAuditEntity {
             columnDefinition = "DATETIME(6)"
     )
     private Instant occurredAt;
+
+    private PropertyRevision(
+            Long propertyId,
+            Long propertyVersion,
+            String changedFieldsJson,
+            String afterSnapshotJson,
+            ActorContext actorContext,
+            Instant occurredAt
+    ) {
+        super(actorContext);
+        this.propertyId = propertyId;
+        this.propertyVersion = propertyVersion;
+        this.changeType = RevisionChangeType.CREATE;
+        this.changeScope = RevisionChangeScope.PROPERTY;
+        this.changedFieldsJson = changedFieldsJson;
+        this.beforeSnapshotJson = null;
+        this.afterSnapshotJson = afterSnapshotJson;
+        this.snapshotSchemaVersion = INITIAL_SNAPSHOT_SCHEMA_VERSION;
+        this.actorMemberId = actorContext.memberId();
+        this.actorRole = actorContext.role();
+        this.changeReason = null;
+        this.traceId = actorContext.traceId();
+        this.occurredAt = occurredAt;
+    }
+
+    public static PropertyRevision created(
+            Long propertyId,
+            Long propertyVersion,
+            String changedFieldsJson,
+            String afterSnapshotJson,
+            ActorContext actorContext,
+            Instant occurredAt
+    ) {
+        return new PropertyRevision(
+                propertyId,
+                propertyVersion,
+                changedFieldsJson,
+                afterSnapshotJson,
+                actorContext,
+                occurredAt
+        );
+    }
 }
