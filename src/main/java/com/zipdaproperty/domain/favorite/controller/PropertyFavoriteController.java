@@ -8,6 +8,7 @@ import com.zipdaproperty.global.config.openapi.CustomApiResponse;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.response.GlobalResponseDTO;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -38,7 +39,8 @@ public class PropertyFavoriteController {
             CustomResponseCode.INVALID_REQUEST,
             CustomResponseCode.UNAUTHENTICATED,
             CustomResponseCode.FORBIDDEN,
-            CustomResponseCode.FAVORITE_TARGET_UNAVAILABLE
+            CustomResponseCode.FAVORITE_TARGET_UNAVAILABLE,
+            CustomResponseCode.METHOD_NOT_ALLOWED
     })
     public ResponseEntity<GlobalResponseDTO<PropertyFavoriteUpdateResponse>> updateFavorite(
             @PathVariable
@@ -47,6 +49,7 @@ public class PropertyFavoriteController {
             @Valid
             @RequestBody
             PropertyFavoriteUpdateRequest request,
+            @Parameter(hidden = true)
             ActorContext actorContext
     ) {
         PropertyFavoriteUpdateResponse response =
@@ -66,7 +69,8 @@ public class PropertyFavoriteController {
     @CustomApiResponse({
             CustomResponseCode.INVALID_REQUEST,
             CustomResponseCode.UNAUTHENTICATED,
-            CustomResponseCode.FORBIDDEN
+            CustomResponseCode.FORBIDDEN,
+            CustomResponseCode.METHOD_NOT_ALLOWED
     })
     public ResponseEntity<GlobalResponseDTO<PropertyFavoriteListResponse>> getMyFavorites(
             @RequestParam(defaultValue = "0")
@@ -76,6 +80,7 @@ public class PropertyFavoriteController {
             @Min(value = 1, message = "size는 1 이상이어야 합니다.")
             @Max(value = 50, message = "size는 50 이하여야 합니다.")
             int size,
+            @Parameter(hidden = true)
             ActorContext actorContext
     ) {
         PropertyFavoriteListResponse response =

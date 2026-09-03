@@ -8,6 +8,7 @@
 `database/schema` 폴더의 번호가 작은 SQL 파일부터 순서대로 실행합니다.
 
 1. `001_create_property_core_tables.sql`
+2. `002_create_property_favorite_table.sql`
 
 ## 실행 전 확인
 
@@ -25,7 +26,7 @@
 
 ## 외래키 정책
 
-Property 내부 테이블 간 외래키는 SQL에 포함합니다.
+Property 내부 테이블 간 외래키는 SQL에 포함하지 않습니다.
 
 다음 테이블은 아직 스키마가 완성되지 않았으므로 외래키를 추가하지 않습니다.
 
