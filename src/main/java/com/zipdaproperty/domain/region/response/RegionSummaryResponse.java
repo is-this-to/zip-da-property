@@ -12,13 +12,19 @@ public record RegionSummaryResponse(
         Boolean hasChildren
 ) {
     public static RegionSummaryResponse from(Region region){
+        Boolean publicHasChildren =
+                region.getRegionLevel() < 3
+                    && Boolean.TRUE.equals(
+                            region.getHasChildren()
+                );
+
         return new RegionSummaryResponse(
                 region.getRegionId(),
                 region.getRegionCode(),
                 region.getRegionName(),
                 region.getRegionLevel(),
                 region.getRegionType(),
-                region.getHasChildren()
+                publicHasChildren
         );
     }
 }
