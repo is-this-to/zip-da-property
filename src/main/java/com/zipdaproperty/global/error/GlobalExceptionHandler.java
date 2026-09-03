@@ -11,6 +11,8 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -162,6 +164,21 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<GlobalResponseDTO<Void>> handleHttpRequestMethodNotSupportedException(
+            HttpRequestMethodNotSupportedException exception
+    ) {
+        log.debug(
+                "{}: method={}",
+                CustomResponseCode.METHOD_NOT_ALLOWED.name(),
+                exception.getMethod()
+        );
+
+        return generateErrorResponse(
+                CustomResponseCode.METHOD_NOT_ALLOWED
+        );
+    }
+
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<GlobalResponseDTO<Void>> handleOptimisticLockingFailureException(
             OptimisticLockingFailureException exception
@@ -205,6 +222,20 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<GlobalResponseDTO<Void>> handleAccessDeniedException(
+            AccessDeniedException exception
+    ) {
+        log.warn(
+                "{}: access denied",
+                CustomResponseCode.FORBIDDEN.name()
+        );
+
+        return generateErrorResponse(
+                CustomResponseCode.FORBIDDEN
+        );
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<GlobalResponseDTO<Void>> handleException(
             Exception exception
@@ -217,5 +248,6 @@ public class GlobalExceptionHandler {
         return generateErrorResponse(
                 CustomResponseCode.SYSTEM_ERROR
         );
+
     }
 }

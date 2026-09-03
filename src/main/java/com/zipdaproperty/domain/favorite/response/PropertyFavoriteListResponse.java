@@ -28,10 +28,6 @@ public record PropertyFavoriteListResponse(
             Integer floor,
             PublisherType publisherType,
             String apartmentComplexName,
-            String nearestStationName,
-            String subwayLineName,
-            Integer distanceMeters,
-            Integer estimatedWalkingMinutes,
             long favoriteCount,
             boolean isFavorite
     ) {

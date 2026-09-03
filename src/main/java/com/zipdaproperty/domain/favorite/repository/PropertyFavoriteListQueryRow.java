@@ -14,6 +14,7 @@ public record PropertyFavoriteListQueryRow(
         Long deposit,
         Long monthlyRent,
         BigDecimal exclusiveArea,
+        String locationSummary,
         Integer floor,
         PublisherType publisherType,
         Long favoriteCount

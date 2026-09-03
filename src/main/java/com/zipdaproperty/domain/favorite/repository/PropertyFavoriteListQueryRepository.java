@@ -13,6 +13,7 @@ import java.util.List;
 
 import static com.zipdaproperty.domain.favorite.entity.QPropertyFavorite.propertyFavorite;
 import static com.zipdaproperty.domain.property.entity.QProperty.property;
+import static com.zipdaproperty.domain.region.entity.QRegion.region;
 
 @Repository
 @RequiredArgsConstructor
@@ -38,6 +39,7 @@ public class PropertyFavoriteListQueryRepository {
                                 property.deposit,
                                 property.monthlyRent,
                                 property.exclusiveArea,
+                                region.fullRegionName,
                                 property.floor,
                                 property.publisherType,
                                 JPAExpressions
@@ -56,6 +58,11 @@ public class PropertyFavoriteListQueryRepository {
                         property.propertyId.eq(
                                 propertyFavorite.propertyId
                         )
+                )
+                .join(region)
+                .on(
+                        region.regionId.eq(property.regionId),
+                        region.isActive.isTrue()
                 )
                 .where(
                         propertyFavorite.memberId.eq(memberId),
