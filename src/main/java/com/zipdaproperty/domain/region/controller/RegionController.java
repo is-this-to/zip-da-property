@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.region.controller;
 
+import com.zipdaproperty.domain.region.response.RegionDetailResponse;
 import com.zipdaproperty.domain.region.response.RegionSummaryResponse;
 import com.zipdaproperty.domain.region.service.RegionService;
 import com.zipdaproperty.global.config.openapi.CustomApiResponse;
@@ -8,13 +9,11 @@ import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -73,5 +72,68 @@ public class RegionController {
             @PathVariable Long parentRegionId
     ){
         return ResponseEntity.ok(GlobalResponseDTO.success(regionService.getChildRegions(parentRegionId)));
+    }
+    @Operation(
+            summary = "지역 상세 및 경계 조회",
+            description = """
+                    공개 선택 가능한 지역의 기본정보, 대표 좌표,
+                    GeoJSON 경계와 지도 표시용 bounds를 조회합니다.
+                    
+                    공개 선택 대상은 시도, 시군구, 읍면동입니다.
+                    RI는 공개 지도 선택에 노출하지 않습니다.
+                    
+                    zoomLevel에 맞는 단순화 경계를 조회하고,
+                    해당 단계가 없으면 원본인 simplificationLevel 0으로
+                    fallback합니다.
+                    
+                    GeoJSON 좌표는 [경도, 위도] 순서입니다.
+                    """
+    )
+    @CustomApiResponse({
+        CustomResponseCode.INVALID_REQUEST,
+        CustomResponseCode.NOT_FOUND_RESOURCE,
+        CustomResponseCode.DB_ERROR,
+        CustomResponseCode.SYSTEM_ERROR
+    })
+    @GetMapping("/{regionId}")
+    public ResponseEntity<GlobalResponseDTO<RegionDetailResponse>>
+            getRegionDetail(
+                    @Parameter(
+                            description = "지역 ID",
+                            example = "21"
+                    )
+                    @Min(
+                            value = 1,
+                            message = "지역 ID는 1 이상이어야 합니다."
+                    )
+                    @PathVariable
+                    Long regionId,
+
+                    @Parameter(
+                            description = """
+                                    현재 Kakao 지도 level입니다.
+                                    생략하면 원본 경계인 simplificationLevel 0을 사용합니다.
+                                    """,
+                            example = "8"
+                    )
+                    @Min(
+                            value = 1,
+                            message = "zoomLevel은 1 이상이어야 합니다."
+                    )
+                    @Max(
+                            value = 14,
+                            message = "zoomLevel은 14 이하여야 합니다."
+                    )
+                    @RequestParam(required = false)
+                    Integer zoomLevel
+    ){
+        RegionDetailResponse response =
+                regionService.getRegionDetail(
+                        regionId,
+                        zoomLevel
+                );
+        return ResponseEntity.ok(
+                GlobalResponseDTO.success(response)
+        );
     }
 }
