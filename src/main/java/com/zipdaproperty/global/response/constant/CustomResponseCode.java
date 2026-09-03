@@ -20,6 +20,10 @@ public enum CustomResponseCode {
     // 입력값 검증 관련
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "E21"),
 
+    // HTTP 요청 방식 관련
+    // 요청 URL은 존재하지만 지원하지 않는 HTTP Method로 호출한 경우
+    METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "E22"),
+
     // Property 비즈니스 규칙 관련 (Property 관련은 "P00"으로 작성)
     INVALID_PRICE_COMBINATION(HttpStatus.UNPROCESSABLE_CONTENT, "P01"),
     INVALID_STATUS_TRANSITION(HttpStatus.CONFLICT, "P02"),
@@ -27,6 +31,11 @@ public enum CustomResponseCode {
     PROPERTY_NOT_FOUND(HttpStatus.NOT_FOUND, "P10"),
     PROPERTY_CREATE_NOT_ALLOWED(HttpStatus.FORBIDDEN, "P11"),
     PROPERTY_OWNERSHIP_REQUIRED(HttpStatus.FORBIDDEN, "P12"),
+
+
+    // 찜 대상 매물이 존재하지 않거나 공개·거래 가능한 상태가 아닌 경우
+    FAVORITE_TARGET_UNAVAILABLE(HttpStatus.NOT_FOUND, "P13"),
+
 
     // 파일 처리 관련
     FILE_MANAGED_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "E40"),

@@ -1,3 +1,4 @@
+
 package com.zipdaproperty;
 
 import org.springframework.boot.SpringApplication;
