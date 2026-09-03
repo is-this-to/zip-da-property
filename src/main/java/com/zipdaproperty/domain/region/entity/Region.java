@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.Filter;
 import org.hibernate.annotations.FilterDef;
+import org.locationtech.jts.geom.Point;
 
 import java.time.LocalDate;
 
@@ -40,6 +41,12 @@ public class Region extends BaseAuditEntity {
             length = 10
     )
     private String regionCode;
+
+    @Column(
+            name = "center_location",
+            columnDefinition = "POINT SRID 4326"
+    )
+    private Point centerLocation;
 
     @Column(
             name = "region_name",
