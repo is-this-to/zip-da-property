@@ -9,6 +9,7 @@
 
 1. `001_create_property_core_tables.sql`
 2. `002_create_property_favorite_table.sql`
+3. `003_create_property_option_tables.sql`
 
 ## 실행 전 확인
 
@@ -26,7 +27,9 @@
 
 ## 외래키 정책
 
-테이블 간 참조 관계는 논리 외래키로 관리하며, 데이터베이스의 물리적인
-FOREIGN KEY 제약은 추가하지 않습니다.
+서비스 또는 데이터베이스 경계를 넘는 참조는 논리 외래키로 관리합니다.
+예를 들어 Property DB의 Member ID에는 물리 `FOREIGN KEY`를 생성하지 않습니다.
 
-참조 무결성과 대상 데이터 존재 여부는 애플리케이션의 Service 및 Repository 계층에서 검증합니다.
+동일한 Property DB 내부 테이블 간 참조에는 물리 `FOREIGN KEY`를 사용할 수 있습니다.
+대상 데이터의 존재 여부는 DB 제약으로 보장하고, 활성 상태·soft delete·권한·업무 허용 여부는
+Service 및 Repository 계층에서 추가로 검증합니다.

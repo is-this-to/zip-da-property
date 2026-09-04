@@ -36,6 +36,12 @@ public enum CustomResponseCode {
     // 찜 대상 매물이 존재하지 않거나 공개·거래 가능한 상태가 아닌 경우
     FAVORITE_TARGET_UNAVAILABLE(HttpStatus.NOT_FOUND, "P13"),
 
+    // 옵션 관련
+    OPTION_CODE_NOT_FOUND(HttpStatus.UNPROCESSABLE_CONTENT, "P14"),
+    OPTION_NOT_ALLOWED_FOR_PROPERTY_TYPE(HttpStatus.UNPROCESSABLE_CONTENT, "P15"),
+    OPTION_VALUE_TYPE_MISMATCH(HttpStatus.UNPROCESSABLE_CONTENT, "P16"),
+    OPTION_VALUE_REQUIRED(HttpStatus.UNPROCESSABLE_CONTENT, "P17"),
+
 
     // 파일 처리 관련
     FILE_MANAGED_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "E40"),
