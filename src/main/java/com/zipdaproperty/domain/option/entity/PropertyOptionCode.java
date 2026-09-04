@@ -1,9 +1,15 @@
 package com.zipdaproperty.domain.option.entity;
 
 import com.zipdaproperty.domain.option.type.OptionCategory;
-import com.zipdaproperty.domain.option.type.OptionValueType;
 import com.zipdaproperty.global.entity.BaseAuditEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -28,16 +34,6 @@ public class PropertyOptionCode extends BaseAuditEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "option_category", nullable = false, length = 30)
     private OptionCategory optionCategory;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "value_type", nullable = false, length = 20)
-    private OptionValueType valueType;
-
-    @Column(name = "unit", length = 20)
-    private String unit;
-
-    @Column(name = "allowed_values_json", columnDefinition = "json")
-    private String allowedValuesJson;
 
     @Column(name = "description", length = 500)
     private String description;

@@ -2,14 +2,18 @@ package com.zipdaproperty.domain.option.entity;
 
 import com.zipdaproperty.domain.option.type.OptionChangeType;
 import com.zipdaproperty.global.entity.BaseAuditEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 
 @Getter
@@ -57,50 +61,14 @@ public class PropertyOptionHistory extends BaseAuditEntity {
     )
     private OptionChangeType changeType;
 
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(
-            name = "changed_fields_json",
-            nullable = false,
-            updatable = false,
-            columnDefinition = "JSON"
-    )
-    private String changedFieldsJson;
+    @Column(name = "changed_fields", nullable = false, updatable = false, length = 500)
+    private String changedFields;
 
-    @Column(name = "before_boolean_value", updatable = false)
-    private Boolean beforeBooleanValue;
+    @Column(name = "before_value", updatable = false, length = 300)
+    private String beforeValue;
 
-    @Column(name = "after_boolean_value", updatable = false)
-    private Boolean afterBooleanValue;
-
-    @Column(
-            name = "before_number_value",
-            precision = 12,
-            scale = 2,
-            updatable = false
-    )
-    private BigDecimal beforeNumberValue;
-
-    @Column(
-            name = "after_number_value",
-            precision = 12,
-            scale = 2,
-            updatable = false
-    )
-    private BigDecimal afterNumberValue;
-
-    @Column(
-            name = "before_text_value",
-            length = 300,
-            updatable = false
-    )
-    private String beforeTextValue;
-
-    @Column(
-            name = "after_text_value",
-            length = 300,
-            updatable = false
-    )
-    private String afterTextValue;
+    @Column(name = "after_value", updatable = false, length = 300)
+    private String afterValue;
 
     @Column(name = "before_display_order", updatable = false)
     private Integer beforeDisplayOrder;

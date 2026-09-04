@@ -2,57 +2,86 @@ package com.zipdaproperty.domain.option.service;
 
 import com.zipdaproperty.domain.option.entity.PropertyOptionCode;
 import com.zipdaproperty.domain.option.entity.PropertyTypeOption;
-import com.zipdaproperty.domain.option.repository.PropertyTypeOptionRepository;
+import com.zipdaproperty.domain.option.repository.PropertyOptionQueryDSLRepository;
 import com.zipdaproperty.domain.option.response.PropertyOptionCodeListResponse;
 import com.zipdaproperty.domain.option.response.PropertyOptionCodeResponse;
-import com.zipdaproperty.domain.option.type.OptionValueType;
 import com.zipdaproperty.domain.property.constant.PropertyType;
-import com.zipdaproperty.global.error.custom.BusinessException;
-import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.json.JsonMapper;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class PropertyOptionQueryService {
 
-    private final PropertyTypeOptionRepository propertyTypeOptionRepository;
-    private final JsonMapper jsonMapper;
+    private final PropertyOptionQueryDSLRepository queryRepository;
 
     public PropertyOptionCodeListResponse getOptionCodes(
             PropertyType propertyType
     ) {
         List<PropertyTypeOption> typeOptions =
-                propertyTypeOptionRepository
-                        .findAllByPropertyTypeAndDeletedAtIsNullAndOptionCodeDeletedAtIsNullAndOptionCodeActiveTrueOrderByDisplayOrderAsc(
-                                propertyType
-                        );
+                queryRepository
+                        .findActiveTypeOptions(propertyType);
+
+        if (typeOptions.isEmpty()) {
+            return new PropertyOptionCodeListResponse(List.of());
+        }
+
+        List<Long> optionCodeIds = typeOptions.stream()
+                .map(PropertyTypeOption::getOptionCodeId)
+                .distinct()
+                .toList();
+
+        Map<Long, PropertyOptionCode> optionCodeById =
+                queryRepository
+                        .findActiveOptionCodesByIds(
+                                optionCodeIds
+                        )
+                        .stream()
+                        .collect(Collectors.toMap(
+                                PropertyOptionCode::getOptionCodeId,
+                                Function.identity()
+                        ));
 
         List<PropertyOptionCodeResponse> items = typeOptions.stream()
-                .map(this::toResponse)
+                .filter(typeOption ->
+                        optionCodeById.containsKey(typeOption.getOptionCodeId())
+                )
+                .sorted(
+                        Comparator.comparingInt(PropertyTypeOption::getDisplayOrder)
+                                .thenComparing(typeOption ->
+                                        optionCodeById
+                                                .get(typeOption.getOptionCodeId())
+                                                .getOptionCode()
+                                )
+                                .thenComparing(
+                                        PropertyTypeOption::getPropertyTypeOptionId
+                                )
+                )
+                .map(typeOption -> toResponse(
+                        typeOption,
+                        optionCodeById.get(typeOption.getOptionCodeId())
+                ))
                 .toList();
 
         return new PropertyOptionCodeListResponse(items);
     }
 
     private PropertyOptionCodeResponse toResponse(
-            PropertyTypeOption typeOption
+            PropertyTypeOption typeOption,
+            PropertyOptionCode optionCode
     ) {
-        PropertyOptionCode optionCode = typeOption.getOptionCode();
-
         return new PropertyOptionCodeResponse(
                 optionCode.getOptionCode(),
                 optionCode.getOptionName(),
                 optionCode.getOptionCategory(),
-                optionCode.getValueType(),
-                optionCode.getUnit(),
-                getAllowedValues(optionCode),
                 optionCode.isFilterable(),
                 optionCode.isRegistrationEnabled(),
                 typeOption.isRequired(),
@@ -60,29 +89,4 @@ public class PropertyOptionQueryService {
         );
     }
 
-    private List<String> getAllowedValues(
-            PropertyOptionCode optionCode
-    ) {
-        if (optionCode.getValueType() != OptionValueType.SINGLE_SELECT) {
-            return null;
-        }
-
-        String allowedValuesJson = optionCode.getAllowedValuesJson();
-
-        if (allowedValuesJson == null || allowedValuesJson.isBlank()) {
-            return List.of();
-        }
-
-        try {
-            return jsonMapper.readValue(
-                    allowedValuesJson,
-                    new TypeReference<List<String>>() {}
-            );
-        } catch (Exception e) {
-            throw new BusinessException(
-                    CustomResponseCode.SYSTEM_ERROR,
-                    "옵션 허용값 설정을 읽을 수 없습니다."
-            );
-        }
-    }
 }
