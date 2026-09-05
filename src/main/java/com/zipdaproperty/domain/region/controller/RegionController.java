@@ -23,7 +23,7 @@ import java.util.List;
 )
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/regions")
+@RequestMapping("/api/property/regions")
 public class RegionController {
 
     private final RegionService regionService;
