@@ -1,44 +1,42 @@
 package com.zipdaproperty.domain.option.validator;
 
-import com.zipdaproperty.global.error.custom.BusinessException;
-import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 class OptionValueValidatorTest {
 
-    private final OptionValueValidator validator = new OptionValueValidator();
+  private final OptionValueValidator validator = new OptionValueValidator();
 
-    @Test
-    void validate_presenceValues_accepts() {
-        assertThatCode(() -> validator.validate("있음")).doesNotThrowAnyException();
-        assertThatCode(() -> validator.validate("없음")).doesNotThrowAnyException();
-    }
+  @Test
+  void isValid_trueFalse_accepts() {
+    assertThat(validator.isValid("true")).isTrue();
+    assertThat(validator.isValid("false")).isTrue();
+  }
 
-    @Test
-    void validate_missingValue_rejects() {
-        for (String value : new String[]{null, "", " "}) {
-            BusinessException exception = catchThrowableOfType(
-                    BusinessException.class, () -> validator.validate(value)
-            );
-            assertThat(exception).isNotNull();
-            assertThat(exception.getCustomResponseCode())
-                    .isEqualTo(CustomResponseCode.OPTION_VALUE_REQUIRED);
-        }
-    }
+  @Test
+  void isValid_missingValue_rejects() {
+    assertThat(validator.isValid(null)).isFalse();
+    assertThat(validator.isValid("")).isFalse();
+    assertThat(validator.isValid(" ")).isFalse();
+  }
 
-    @Test
-    void validate_otherValues_rejects() {
-        for (String value : new String[]{"true", "false", "1", "있음 ", " 있음", "미확인"}) {
-            BusinessException exception = catchThrowableOfType(
-                    BusinessException.class, () -> validator.validate(value)
-            );
-            assertThat(exception).isNotNull();
-            assertThat(exception.getCustomResponseCode())
-                    .isEqualTo(CustomResponseCode.OPTION_VALUE_TYPE_MISMATCH);
-        }
-    }
+  @Test
+  void isValid_otherValues_rejects() {
+    assertThat(validator.isValid("TRUE")).isFalse();
+    assertThat(validator.isValid("FALSE")).isFalse();
+    assertThat(validator.isValid("True")).isFalse();
+    assertThat(validator.isValid("False")).isFalse();
+
+    assertThat(validator.isValid("1")).isFalse();
+    assertThat(validator.isValid("0")).isFalse();
+
+    assertThat(validator.isValid("있음")).isFalse();
+    assertThat(validator.isValid("없음")).isFalse();
+
+    assertThat(validator.isValid("true ")).isFalse();
+    assertThat(validator.isValid(" true")).isFalse();
+    assertThat(validator.isValid("미확인")).isFalse();
+  }
+
 }
