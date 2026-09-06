@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.region.controller;
 
+import com.zipdaproperty.domain.region.request.RegionSearchRequest;
 import com.zipdaproperty.domain.region.response.RegionDetailResponse;
 import com.zipdaproperty.domain.region.response.RegionSummaryResponse;
 import com.zipdaproperty.domain.region.service.RegionService;
@@ -9,9 +10,11 @@ import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -44,6 +47,7 @@ public class RegionController {
     public ResponseEntity<GlobalResponseDTO<List<RegionSummaryResponse>>> getRootRegions(){
         return ResponseEntity.ok(GlobalResponseDTO.success(regionService.getRootRegions()));
     }
+
     @Operation(
             summary = "직계 하위 지역 목록 조회",
             description = """
@@ -73,6 +77,38 @@ public class RegionController {
     ){
         return ResponseEntity.ok(GlobalResponseDTO.success(regionService.getChildRegions(parentRegionId)));
     }
+
+    @Operation(
+            summary = "지역명 검색",
+            description = """
+                    입력한 검색어가 지역명에 포함된 공개 선택 가능 지역을 조회합니다.
+                    
+                    검색 대상은 시·도, 시·군·구, 읍·면·동이며,
+                    RI는 공개 검색 결과에서 제외합니다.
+                    
+                    활성 상태이며 소프트 삭제되지 않은 지역만 조회하고,
+                    지역명 가나다순으로 반환합니다.
+                    
+                    조회 결과가 없으면 오류가 아니라 빈 목록을 반환합니다.
+                    """
+    )
+    @CustomApiResponse({
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.DB_ERROR,
+            CustomResponseCode.SYSTEM_ERROR
+    })
+    @GetMapping("/search")
+    public ResponseEntity<GlobalResponseDTO<List<RegionSummaryResponse>>> searchRegions(
+            @Valid
+            @ParameterObject
+            @ModelAttribute
+            RegionSearchRequest request
+    ){
+        List<RegionSummaryResponse> response = regionService.searchRegions(request.keyword());
+
+        return ResponseEntity.ok(GlobalResponseDTO.success(response));
+    }
+
     @Operation(
             summary = "지역 상세 및 경계 조회",
             description = """
@@ -136,4 +172,6 @@ public class RegionController {
                 GlobalResponseDTO.success(response)
         );
     }
+
+
 }
