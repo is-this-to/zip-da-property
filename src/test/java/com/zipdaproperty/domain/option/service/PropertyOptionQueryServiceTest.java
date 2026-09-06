@@ -3,8 +3,8 @@ package com.zipdaproperty.domain.option.service;
 import com.zipdaproperty.domain.option.entity.PropertyOptionCode;
 import com.zipdaproperty.domain.option.entity.PropertyTypeOption;
 import com.zipdaproperty.domain.option.repository.PropertyOptionQueryDSLRepository;
-import com.zipdaproperty.domain.option.response.PropertyOptionCodeListResponse;
-import com.zipdaproperty.domain.option.response.PropertyOptionCodeResponse;
+import com.zipdaproperty.domain.option.response.PropertyOptionCodeListResponseDTO;
+import com.zipdaproperty.domain.option.response.PropertyOptionCodeResponseDTO;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.BeanUtils;
@@ -46,7 +46,7 @@ class PropertyOptionQueryServiceTest {
 
         var items = service.getOptionCodes(PropertyType.ROOM).items();
 
-        assertThat(items).extracting(PropertyOptionCodeResponse::optionCode).containsExactly("A", "B", "C");
+        assertThat(items).extracting(PropertyOptionCodeResponseDTO::optionCode).containsExactly("A", "B", "C");
         // 등록·검색 capability가 false여도 공용 메타데이터에서는 제외하지 않는다.
         assertThat(items).allMatch(item -> !item.filterable() && !item.registrationEnabled());
         verify(queryRepository).findActiveOptionCodesByIds(List.of(30L, 20L, 10L));
@@ -62,7 +62,7 @@ class PropertyOptionQueryServiceTest {
                 .thenReturn(List.of(code(10, "A")));
 
         assertThat(service.getOptionCodes(PropertyType.ROOM).items())
-                .extracting(PropertyOptionCodeResponse::optionCode).containsExactly("A");
+                .extracting(PropertyOptionCodeResponseDTO::optionCode).containsExactly("A");
     }
 
     @Test
@@ -75,7 +75,7 @@ class PropertyOptionQueryServiceTest {
                 .thenReturn(List.of(code(10, "A")));
 
         assertThat(service.getOptionCodes(PropertyType.ROOM).items())
-                .extracting(PropertyOptionCodeResponse::required).containsExactly(true, false);
+                .extracting(PropertyOptionCodeResponseDTO::required).containsExactly(true, false);
         verify(queryRepository).findActiveOptionCodesByIds(List.of(10L));
         verify(queryRepository).findActiveTypeOptions(PropertyType.ROOM);
         verifyNoMoreInteractions(queryRepository);
@@ -83,9 +83,9 @@ class PropertyOptionQueryServiceTest {
 
     @Test
     void listResponse_mutableInput_copiesList() {
-        var source = new ArrayList<PropertyOptionCodeResponse>();
-        source.add(new PropertyOptionCodeResponse("A", "옵션", null, false, true, false, 10));
-        var response = new PropertyOptionCodeListResponse(source);
+        var source = new ArrayList<PropertyOptionCodeResponseDTO>();
+        source.add(new PropertyOptionCodeResponseDTO("A", "옵션", null, false, true, false, 10));
+        var response = new PropertyOptionCodeListResponseDTO(source);
         source.clear();
 
         assertThat(response.items()).hasSize(1);

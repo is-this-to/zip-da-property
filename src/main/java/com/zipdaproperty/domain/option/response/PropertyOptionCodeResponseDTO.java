@@ -2,7 +2,7 @@ package com.zipdaproperty.domain.option.response;
 
 import com.zipdaproperty.domain.option.type.OptionCategory;
 
-public record PropertyOptionCodeResponse(
+public record PropertyOptionCodeResponseDTO(
         String optionCode,
         String optionName,
         OptionCategory optionCategory,

@@ -3,8 +3,8 @@ package com.zipdaproperty.domain.option.service;
 import com.zipdaproperty.domain.option.entity.PropertyOptionCode;
 import com.zipdaproperty.domain.option.entity.PropertyTypeOption;
 import com.zipdaproperty.domain.option.repository.PropertyOptionQueryDSLRepository;
-import com.zipdaproperty.domain.option.response.PropertyOptionCodeListResponse;
-import com.zipdaproperty.domain.option.response.PropertyOptionCodeResponse;
+import com.zipdaproperty.domain.option.response.PropertyOptionCodeListResponseDTO;
+import com.zipdaproperty.domain.option.response.PropertyOptionCodeResponseDTO;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,7 +23,7 @@ public class PropertyOptionQueryService {
 
     private final PropertyOptionQueryDSLRepository queryRepository;
 
-    public PropertyOptionCodeListResponse getOptionCodes(
+    public PropertyOptionCodeListResponseDTO getOptionCodes(
             PropertyType propertyType
     ) {
         List<PropertyTypeOption> typeOptions =
@@ -31,7 +31,7 @@ public class PropertyOptionQueryService {
                         .findActiveTypeOptions(propertyType);
 
         if (typeOptions.isEmpty()) {
-            return new PropertyOptionCodeListResponse(List.of());
+            return new PropertyOptionCodeListResponseDTO(List.of());
         }
 
         List<Long> optionCodeIds = typeOptions.stream()
@@ -50,7 +50,7 @@ public class PropertyOptionQueryService {
                                 Function.identity()
                         ));
 
-        List<PropertyOptionCodeResponse> items = typeOptions.stream()
+        List<PropertyOptionCodeResponseDTO> items = typeOptions.stream()
                 .filter(typeOption ->
                         optionCodeById.containsKey(typeOption.getOptionCodeId())
                 )
@@ -71,14 +71,14 @@ public class PropertyOptionQueryService {
                 ))
                 .toList();
 
-        return new PropertyOptionCodeListResponse(items);
+        return new PropertyOptionCodeListResponseDTO(items);
     }
 
-    private PropertyOptionCodeResponse toResponse(
+    private PropertyOptionCodeResponseDTO toResponse(
             PropertyTypeOption typeOption,
             PropertyOptionCode optionCode
     ) {
-        return new PropertyOptionCodeResponse(
+        return new PropertyOptionCodeResponseDTO(
                 optionCode.getOptionCode(),
                 optionCode.getOptionName(),
                 optionCode.getOptionCategory(),

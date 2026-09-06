@@ -1,6 +1,6 @@
 package com.zipdaproperty.domain.option.controller;
 
-import com.zipdaproperty.domain.option.response.PropertyOptionCodeListResponse;
+import com.zipdaproperty.domain.option.response.PropertyOptionCodeListResponseDTO;
 import com.zipdaproperty.domain.option.service.PropertyOptionQueryService;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.global.config.openapi.CustomApiResponse;
@@ -28,11 +28,11 @@ public class PropertyOptionController {
             CustomResponseCode.METHOD_NOT_ALLOWED,
             CustomResponseCode.SYSTEM_ERROR
     })
-    public ResponseEntity<GlobalResponseDTO<PropertyOptionCodeListResponse>> getOptionCodes(
+    public ResponseEntity<GlobalResponseDTO<PropertyOptionCodeListResponseDTO>> getOptionCodes(
             @RequestParam
             PropertyType propertyType
     ) {
-        PropertyOptionCodeListResponse response =
+        PropertyOptionCodeListResponseDTO response =
                 propertyOptionQueryService.getOptionCodes(propertyType);
 
         return ResponseEntity.ok(

@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -26,228 +27,242 @@ import java.util.List;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    private ResponseEntity<GlobalResponseDTO<Void>> generateErrorResponse(
-            CustomResponseCode customResponseCode
-    ) {
-        return ResponseEntity
-                .status(customResponseCode.getHttpStatus())
-                .body(GlobalResponseDTO.from(customResponseCode));
-    }
+  private ResponseEntity<GlobalResponseDTO<Void>> generateErrorResponse(
+      CustomResponseCode customResponseCode
+  ) {
+    return ResponseEntity
+        .status(customResponseCode.getHttpStatus())
+        .body(GlobalResponseDTO.from(customResponseCode));
+  }
 
-    private <T> ResponseEntity<GlobalResponseDTO<T>> generateErrorResponse(
-            CustomResponseCode customResponseCode,
-            T data
-    ) {
-        return ResponseEntity
-                .status(customResponseCode.getHttpStatus())
-                .body(GlobalResponseDTO.from(
-                        customResponseCode,
-                        data
-                ));
-    }
+  private <T> ResponseEntity<GlobalResponseDTO<T>> generateErrorResponse(
+      CustomResponseCode customResponseCode,
+      T data
+  ) {
+    return ResponseEntity
+        .status(customResponseCode.getHttpStatus())
+        .body(GlobalResponseDTO.from(
+            customResponseCode,
+            data
+        ));
+  }
 
-    @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<GlobalResponseDTO<Void>> handleBusinessException(
-            BusinessException exception
-    ) {
-        log.warn(
-                "{}: {}",
-                exception.getCustomResponseCode().name(),
-                exception.getMessage()
-        );
+  @ExceptionHandler(BusinessException.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleBusinessException(
+      BusinessException exception
+  ) {
+    log.warn(
+        "{}: {}",
+        exception.getCustomResponseCode().name(),
+        exception.getMessage()
+    );
 
-        return generateErrorResponse(
-                exception.getCustomResponseCode()
-        );
-    }
+    return generateErrorResponse(
+        exception.getCustomResponseCode()
+    );
+  }
 
-    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<GlobalResponseDTO<Void>> handleTypeMismatchException(
-            MethodArgumentTypeMismatchException exception
-    ) {
-        log.debug(
-                "{}: invalid parameter={}",
-                CustomResponseCode.INVALID_REQUEST.name(),
-                exception.getName()
-        );
+  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleTypeMismatchException(
+      MethodArgumentTypeMismatchException exception
+  ) {
+    log.debug(
+        "{}: invalid parameter={}",
+        CustomResponseCode.INVALID_REQUEST.name(),
+        exception.getName()
+    );
 
-        return generateErrorResponse(
-                CustomResponseCode.INVALID_REQUEST
-        );
-    }
+    return generateErrorResponse(
+        CustomResponseCode.INVALID_REQUEST
+    );
+  }
 
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<GlobalResponseDTO<Void>> handleMessageNotReadableException(
-            HttpMessageNotReadableException exception
-    ) {
-        log.debug(
-                "{}: request body is not readable",
-                CustomResponseCode.INVALID_REQUEST.name()
-        );
+  @ExceptionHandler(MissingServletRequestParameterException.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleMissingRequestParameterException(
+      MissingServletRequestParameterException exception
+  ) {
+    log.debug(
+        "{}: missing parameter={}",
+        CustomResponseCode.INVALID_REQUEST.name(),
+        exception.getParameterName()
+    );
 
-        return generateErrorResponse(
-                CustomResponseCode.INVALID_REQUEST
-        );
-    }
+    return generateErrorResponse(
+        CustomResponseCode.INVALID_REQUEST
+    );
+  }
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<GlobalResponseDTO<List<FieldErrorDTO>>> handleValidationException(
-            MethodArgumentNotValidException exception
-    ) {
-        List<FieldErrorDTO> fieldErrors = exception
-                .getBindingResult()
-                .getFieldErrors()
-                .stream()
-                .map(fieldError -> new FieldErrorDTO(
-                        fieldError.getField(),
-                        fieldError.getDefaultMessage() == null
-                                ? "유효하지 않은 값입니다."
-                                : fieldError.getDefaultMessage()
-                ))
-                .toList();
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleMessageNotReadableException(
+      HttpMessageNotReadableException exception
+  ) {
+    log.debug(
+        "{}: request body is not readable",
+        CustomResponseCode.INVALID_REQUEST.name()
+    );
 
-        log.debug(
-                "{}: invalid fields={}",
-                CustomResponseCode.INVALID_REQUEST.name(),
-                fieldErrors
-                        .stream()
-                        .map(FieldErrorDTO::field)
-                        .toList()
-        );
+    return generateErrorResponse(
+        CustomResponseCode.INVALID_REQUEST
+    );
+  }
 
-        return generateErrorResponse(
-                CustomResponseCode.INVALID_REQUEST,
-                fieldErrors
-        );
-    }
+  @ExceptionHandler(MethodArgumentNotValidException.class)
+  public ResponseEntity<GlobalResponseDTO<List<FieldErrorDTO>>> handleValidationException(
+      MethodArgumentNotValidException exception
+  ) {
+    List<FieldErrorDTO> fieldErrors = exception
+        .getBindingResult()
+        .getFieldErrors()
+        .stream()
+        .map(fieldError -> new FieldErrorDTO(
+            fieldError.getField(),
+            fieldError.getDefaultMessage() == null
+                ? "유효하지 않은 값입니다."
+                : fieldError.getDefaultMessage()
+        ))
+        .toList();
 
-    @ExceptionHandler(HandlerMethodValidationException.class)
-    public ResponseEntity<GlobalResponseDTO<Void>> handleMethodValidationException(
-            HandlerMethodValidationException exception
-    ) {
-        log.debug(
-                "{}: method parameter validation failed",
-                CustomResponseCode.INVALID_REQUEST.name()
-        );
+    log.debug(
+        "{}: invalid fields={}",
+        CustomResponseCode.INVALID_REQUEST.name(),
+        fieldErrors
+            .stream()
+            .map(FieldErrorDTO::field)
+            .toList()
+    );
 
-        return generateErrorResponse(
-                CustomResponseCode.INVALID_REQUEST
-        );
-    }
+    return generateErrorResponse(
+        CustomResponseCode.INVALID_REQUEST,
+        fieldErrors
+    );
+  }
 
-    @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<GlobalResponseDTO<Void>> handleConstraintViolationException(
-            ConstraintViolationException exception
-    ) {
-        log.debug(
-                "{}: constraint validation failed",
-                CustomResponseCode.INVALID_REQUEST.name()
-        );
+  @ExceptionHandler(HandlerMethodValidationException.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleMethodValidationException(
+      HandlerMethodValidationException exception
+  ) {
+    log.debug(
+        "{}: method parameter validation failed",
+        CustomResponseCode.INVALID_REQUEST.name()
+    );
 
-        return generateErrorResponse(
-                CustomResponseCode.INVALID_REQUEST
-        );
-    }
+    return generateErrorResponse(
+        CustomResponseCode.INVALID_REQUEST
+    );
+  }
 
-    @ExceptionHandler(NoResourceFoundException.class)
-    public ResponseEntity<GlobalResponseDTO<Void>> handleNoResourceFoundException(
-            NoResourceFoundException exception
-    ) {
-        log.debug(
-                "{}: resourcePath={}",
-                CustomResponseCode.NOT_FOUND_RESOURCE.name(),
-                exception.getResourcePath()
-        );
+  @ExceptionHandler(ConstraintViolationException.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleConstraintViolationException(
+      ConstraintViolationException exception
+  ) {
+    log.debug(
+        "{}: constraint validation failed",
+        CustomResponseCode.INVALID_REQUEST.name()
+    );
 
-        return generateErrorResponse(
-                CustomResponseCode.NOT_FOUND_RESOURCE
-        );
-    }
+    return generateErrorResponse(
+        CustomResponseCode.INVALID_REQUEST
+    );
+  }
 
-    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public ResponseEntity<GlobalResponseDTO<Void>> handleHttpRequestMethodNotSupportedException(
-            HttpRequestMethodNotSupportedException exception
-    ) {
-        log.debug(
-                "{}: method={}",
-                CustomResponseCode.METHOD_NOT_ALLOWED.name(),
-                exception.getMethod()
-        );
+  @ExceptionHandler(NoResourceFoundException.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleNoResourceFoundException(
+      NoResourceFoundException exception
+  ) {
+    log.debug(
+        "{}: resourcePath={}",
+        CustomResponseCode.NOT_FOUND_RESOURCE.name(),
+        exception.getResourcePath()
+    );
 
-        return generateErrorResponse(
-                CustomResponseCode.METHOD_NOT_ALLOWED
-        );
-    }
+    return generateErrorResponse(
+        CustomResponseCode.NOT_FOUND_RESOURCE
+    );
+  }
 
-    @ExceptionHandler(OptimisticLockingFailureException.class)
-    public ResponseEntity<GlobalResponseDTO<Void>> handleOptimisticLockingFailureException(
-            OptimisticLockingFailureException exception
-    ) {
-        log.warn(
-                "{}: {}",
-                CustomResponseCode.VERSION_CONFLICT.name(),
-                exception.getMessage()
-        );
+  @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleHttpRequestMethodNotSupportedException(
+      HttpRequestMethodNotSupportedException exception
+  ) {
+    log.debug(
+        "{}: method={}",
+        CustomResponseCode.METHOD_NOT_ALLOWED.name(),
+        exception.getMethod()
+    );
 
-        return generateErrorResponse(
-                CustomResponseCode.VERSION_CONFLICT
-        );
-    }
+    return generateErrorResponse(
+        CustomResponseCode.METHOD_NOT_ALLOWED
+    );
+  }
 
-    @ExceptionHandler(DuplicateKeyException.class)
-    public ResponseEntity<GlobalResponseDTO<Void>> handleDuplicateKeyException(
-            DuplicateKeyException exception
-    ) {
-        log.error(
-                "DB duplicate key error",
-                exception
-        );
+  @ExceptionHandler(OptimisticLockingFailureException.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleOptimisticLockingFailureException(
+      OptimisticLockingFailureException exception
+  ) {
+    log.warn(
+        "{}: {}",
+        CustomResponseCode.VERSION_CONFLICT.name(),
+        exception.getMessage()
+    );
 
-        return generateErrorResponse(
-                CustomResponseCode.DB_DUPLICATED_KEY_ERROR
-        );
-    }
+    return generateErrorResponse(
+        CustomResponseCode.VERSION_CONFLICT
+    );
+  }
 
-    @ExceptionHandler(DataAccessException.class)
-    public ResponseEntity<GlobalResponseDTO<Void>> handleDataAccessException(
-            DataAccessException exception
-    ) {
-        log.error(
-                "Database access error",
-                exception
-        );
+  @ExceptionHandler(DuplicateKeyException.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleDuplicateKeyException(
+      DuplicateKeyException exception
+  ) {
+    log.error(
+        "DB duplicate key error",
+        exception
+    );
 
-        return generateErrorResponse(
-                CustomResponseCode.DB_ERROR
-        );
-    }
+    return generateErrorResponse(
+        CustomResponseCode.DB_DUPLICATED_KEY_ERROR
+    );
+  }
 
-    @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<GlobalResponseDTO<Void>> handleAccessDeniedException(
-            AccessDeniedException exception
-    ) {
-        log.warn(
-                "{}: access denied",
-                CustomResponseCode.FORBIDDEN.name()
-        );
+  @ExceptionHandler(DataAccessException.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleDataAccessException(
+      DataAccessException exception
+  ) {
+    log.error(
+        "Database access error",
+        exception
+    );
 
-        return generateErrorResponse(
-                CustomResponseCode.FORBIDDEN
-        );
-    }
+    return generateErrorResponse(
+        CustomResponseCode.DB_ERROR
+    );
+  }
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<GlobalResponseDTO<Void>> handleException(
-            Exception exception
-    ) {
-        log.error(
-                "Unexpected system error",
-                exception
-        );
+  @ExceptionHandler(AccessDeniedException.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleAccessDeniedException(
+      AccessDeniedException exception
+  ) {
+    log.warn(
+        "{}: access denied",
+        CustomResponseCode.FORBIDDEN.name()
+    );
 
-        return generateErrorResponse(
-                CustomResponseCode.SYSTEM_ERROR
-        );
+    return generateErrorResponse(
+        CustomResponseCode.FORBIDDEN
+    );
+  }
 
-    }
+  @ExceptionHandler(Exception.class)
+  public ResponseEntity<GlobalResponseDTO<Void>> handleException(
+      Exception exception
+  ) {
+    log.error(
+        "Unexpected system error",
+        exception
+    );
+
+    return generateErrorResponse(
+        CustomResponseCode.SYSTEM_ERROR
+    );
+  }
 }

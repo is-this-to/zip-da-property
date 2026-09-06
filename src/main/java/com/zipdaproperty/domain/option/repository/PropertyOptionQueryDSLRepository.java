@@ -81,7 +81,7 @@ public class PropertyOptionQueryDSLRepository {
                         .fetchOne()
         );
     }
-    public boolean existsActiveOption(
+    public boolean existsByPropertyIdAndOptionCodeIdAndDeletedAtIsNull(
             Long propertyId,
             Long optionCodeId
     ) {
@@ -96,7 +96,7 @@ public class PropertyOptionQueryDSLRepository {
                 .fetchFirst() != null;
     }
 
-    public boolean existsActiveTypeOption(
+    public boolean existsByPropertyTypeAndOptionCodeIdAndDeletedAtIsNull(
             PropertyType propertyType,
             Long optionCodeId
     ) {
