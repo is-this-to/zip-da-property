@@ -2,8 +2,10 @@ package com.zipdaproperty.domain.option.service;
 
 import com.zipdaproperty.domain.option.command.PropertyOptionCreateCommand;
 import com.zipdaproperty.domain.option.entity.PropertyOption;
+import com.zipdaproperty.domain.option.entity.PropertyOptionHistory;
 import com.zipdaproperty.domain.option.entity.PropertyOptionCode;
 import com.zipdaproperty.domain.option.entity.PropertyTypeOption;
+import com.zipdaproperty.domain.option.repository.PropertyOptionHistoryRepository;
 import com.zipdaproperty.domain.option.repository.PropertyOptionQueryDSLRepository;
 import com.zipdaproperty.domain.option.repository.PropertyOptionRepository;
 import com.zipdaproperty.domain.option.validator.OptionValueValidator;
@@ -33,21 +35,26 @@ import java.util.stream.Collectors;
 public class PropertyOptionCommandService {
 
     private final PropertyOptionRepository propertyOptionRepository;
+    private final PropertyOptionHistoryRepository propertyOptionHistoryRepository;
     private final PropertyOptionQueryDSLRepository queryRepository;
     private final OptionValueValidator optionValueValidator;
 
     @Transactional
     public void createOption(
             Long propertyId,
+            Long propertyRevisionId,
             PropertyType propertyType,
             String optionCode,
             String optionValue,
+            String changedFields,
             ActorContext actorContext
     ) {
         createOptions(
                 propertyId,
+                propertyRevisionId,
                 propertyType,
                 List.of(new PropertyOptionCreateCommand(optionCode, optionValue)),
+                changedFields,
                 actorContext
         );
     }
@@ -55,20 +62,27 @@ public class PropertyOptionCommandService {
     @Transactional
     public void createOptions(
             Long propertyId,
+            Long propertyRevisionId,
             PropertyType propertyType,
             List<PropertyOptionCreateCommand> commands,
+            String changedFields,
             ActorContext actorContext
     ) {
         Objects.requireNonNull(propertyId, "매물 ID는 필수입니다.");
+        validateHistoryContext(propertyRevisionId, changedFields);
         Objects.requireNonNull(propertyType, "매물 유형은 필수입니다.");
         Objects.requireNonNull(commands, "옵션 요청 목록은 필수입니다.");
         Objects.requireNonNull(actorContext, "옵션 생성에는 ActorContext가 필요합니다.");
 
+        LinkedHashSet<String> requestedCodes = validateCommands(commands);
+
+        List<PropertyTypeOption> activeTypeOptions =
+                queryRepository.findActiveTypeOptions(propertyType);
+
         if (commands.isEmpty()) {
+            validateRequiredOptions(requestedCodes, activeTypeOptions);
             return;
         }
-
-        LinkedHashSet<String> requestedCodes = validateCommands(commands);
 
         Map<String, PropertyOptionCode> optionCodeByCode =
                 queryRepository.findActiveOptionCodesByCodes(List.copyOf(requestedCodes))
@@ -79,7 +93,7 @@ public class PropertyOptionCommandService {
                         ));
 
         Map<Long, PropertyTypeOption> typeOptionByCodeId =
-                queryRepository.findActiveTypeOptions(propertyType)
+                activeTypeOptions
                         .stream()
                         .collect(Collectors.toMap(
                                 PropertyTypeOption::getOptionCodeId,
@@ -105,18 +119,34 @@ public class PropertyOptionCommandService {
                 ))
                 .toList();
 
-        propertyOptionRepository.saveAll(propertyOptions);
+        validateRequiredOptions(requestedCodes, activeTypeOptions);
+
+        List<PropertyOption> savedOptions = propertyOptionRepository.saveAll(propertyOptions);
+        Instant occurredAt = Instant.now();
+        List<PropertyOptionHistory> histories = savedOptions.stream()
+                .map(propertyOption -> PropertyOptionHistory.create(
+                        propertyRevisionId,
+                        propertyOption,
+                        changedFields,
+                        occurredAt,
+                        actorContext
+                ))
+                .toList();
+        propertyOptionHistoryRepository.saveAll(histories);
     }
 
     @Transactional
     public void changeOptionValue(
             Long propertyId,
+            Long propertyRevisionId,
             PropertyType propertyType,
             String optionCode,
             String optionValue,
+            String changedFields,
             ActorContext actorContext
     ) {
         Objects.requireNonNull(propertyId, "매물 ID는 필수입니다.");
+        validateHistoryContext(propertyRevisionId, changedFields);
         Objects.requireNonNull(propertyType, "매물 유형은 필수입니다.");
         Objects.requireNonNull(actorContext, "옵션 수정에는 ActorContext가 필요합니다.");
 
@@ -132,19 +162,33 @@ public class PropertyOptionCommandService {
                 optionCode
         );
 
+        PropertyOptionHistory.Snapshot before =
+                PropertyOptionHistory.Snapshot.from(propertyOption);
+        Instant occurredAt = Instant.now();
         propertyOption.changeValue(optionValue, actorContext);
-        propertyOptionRepository.save(propertyOption);
+        PropertyOption savedOption = propertyOptionRepository.save(propertyOption);
+        propertyOptionHistoryRepository.save(PropertyOptionHistory.update(
+                propertyRevisionId,
+                savedOption,
+                changedFields,
+                before,
+                occurredAt,
+                actorContext
+        ));
     }
 
     @Transactional
     public void softDeleteOption(
             Long propertyId,
+            Long propertyRevisionId,
             PropertyType propertyType,
             String optionCode,
             String deleteReason,
+            String changedFields,
             ActorContext actorContext
     ) {
         Objects.requireNonNull(propertyId, "매물 ID는 필수입니다.");
+        validateHistoryContext(propertyRevisionId, changedFields);
         Objects.requireNonNull(propertyType, "매물 유형은 필수입니다.");
         Objects.requireNonNull(actorContext, "옵션 삭제에는 ActorContext가 필요합니다.");
 
@@ -158,8 +202,19 @@ public class PropertyOptionCommandService {
                 optionCode
         );
 
-        propertyOption.softDelete(actorContext, Instant.now(), deleteReason);
-        propertyOptionRepository.save(propertyOption);
+        PropertyOptionHistory.Snapshot before =
+                PropertyOptionHistory.Snapshot.from(propertyOption);
+        Instant occurredAt = Instant.now();
+        propertyOption.softDelete(actorContext, occurredAt, deleteReason);
+        PropertyOption savedOption = propertyOptionRepository.save(propertyOption);
+        propertyOptionHistoryRepository.save(PropertyOptionHistory.softDelete(
+                propertyRevisionId,
+                savedOption,
+                changedFields,
+                before,
+                occurredAt,
+                actorContext
+        ));
     }
 
     private LinkedHashSet<String> validateCommands(
@@ -231,6 +286,35 @@ public class PropertyOptionCommandService {
                 typeOption.getDisplayOrder(),
                 actorContext
         );
+    }
+
+    private void validateRequiredOptions(
+            Set<String> requestedCodes,
+            List<PropertyTypeOption> activeTypeOptions
+    ) {
+        List<Long> requiredOptionCodeIds = activeTypeOptions.stream()
+                .filter(PropertyTypeOption::isRequired)
+                .map(PropertyTypeOption::getOptionCodeId)
+                .distinct()
+                .toList();
+
+        if (requiredOptionCodeIds.isEmpty()) {
+            return;
+        }
+
+        List<String> missingRequiredOptionCodes =
+                queryRepository.findActiveOptionCodesByIds(requiredOptionCodeIds)
+                        .stream()
+                        .map(PropertyOptionCode::getOptionCode)
+                        .filter(optionCode -> !requestedCodes.contains(optionCode))
+                        .toList();
+
+        if (!missingRequiredOptionCodes.isEmpty()) {
+            throw new OptionValueRequiredException(
+                    "필수 옵션이 누락되었습니다: "
+                            + String.join(", ", missingRequiredOptionCodes)
+            );
+        }
     }
 
     private PropertyOptionCode findWritableOptionCode(
@@ -334,6 +418,19 @@ public class PropertyOptionCommandService {
                     "옵션 값은 true 또는 false만 사용할 수 있습니다: "
                             + optionCode
             );
+        }
+    }
+
+    private void validateHistoryContext(
+            Long propertyRevisionId,
+            String changedFields
+    ) {
+        Objects.requireNonNull(propertyRevisionId, "매물 리비전 ID는 필수입니다.");
+        if (changedFields == null || changedFields.isBlank()) {
+            throw new IllegalArgumentException("변경 필드는 필수입니다.");
+        }
+        if (changedFields.length() > 500) {
+            throw new IllegalArgumentException("변경 필드는 500자를 초과할 수 없습니다.");
         }
     }
 

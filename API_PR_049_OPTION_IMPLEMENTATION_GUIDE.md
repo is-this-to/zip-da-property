@@ -156,10 +156,13 @@ existsByPropertyTypeAndOptionCodeIdAndDeletedAtIsNull(
 - `PropertyOptionQueryDSLRepositoryTest`: 성공
 - `OptionRepositoryMethodTest`: 성공
 - `git diff --check`: 오류 없음 보고
+- `PropertyOptionTest`: 성공
+- `PropertyOptionCommandServiceTest`: 성공
 
 위 Java·Gradle 결과는 현재 작업 환경에서 직접 실행한 결과다. Postman과 집 로컬 DB 결과는 사용자의 직접 검증 보고를 반영했다. 전체 테스트, 학원·공유 MySQL, OpenAPI 검증까지 모두 통과했다는 의미는 아니다. 과거의 “테스트 없음”, “집 JAVA_HOME 미설정”, “원격보다 7커밋 앞섬”은 현재 상태로 유지하지 않는다.
 
 2026-09-07 정합화 작업에서는 신규 DB용 003 DDL과 네 옵션 값 컬럼, Entity 매핑, Validator, Enum을 실제 소스에서 대조했다. Codex가 DB에 직접 접속하지는 않았지만, 사용자가 집 DB에서 마이그레이션과 검증을 완료한 결과를 환경별 상태에 반영했다. 이 작업에서 실행한 컴파일과 테스트 결과는 아래 작업 기록에 남긴다.
+2026-09-07 옵션 쓰기 최종 관련 검증에서 `PropertyOptionCommandServiceTest`, `PropertyOptionTest`, `PropertyOptionQueryDSLRepositoryTest`가 성공했고, `compileJava`와 `git diff --check`도 성공했다.
 
 ### 옵션 내부 쓰기 구현 상태
 
@@ -172,8 +175,8 @@ existsByPropertyTypeAndOptionCodeIdAndDeletedAtIsNull(
 - [x] 옵션 값이 정확한 소문자 문자열 `"true"`, `"false"`인지 검증
 - [x] 동일 요청 내 `optionCode` 중복 검증
 - [x] `(propertyId, optionCodeId)` 활성 중복 검증
-- [ ] 옵션 이력 저장
-- [ ] 필수 옵션 누락 검증
+- [x] 옵션 이력 저장
+- [x] 필수 옵션 누락 검증
 - [ ] PR-011 `options[]` 계약 및 매물 등록 연동
 - [ ] PR-012 매물 수정 연동
 - [ ] 활성 UNIQUE 없이 동시 중복을 막는 상위 트랜잭션 잠금 정책
@@ -191,7 +194,7 @@ existsByPropertyTypeAndOptionCodeIdAndDeletedAtIsNull(
 - [x] 집 로컬 DB에서 네 값 컬럼의 `VARCHAR(5)`, `CAST(... AS BINARY)` CHECK, 소문자 `true/false`, invalid 0건을 확인했다.
 - [x] 신규 DB용 003에 물리 FK·활성 generated key·옵션 활성 UNIQUE가 없음을 확인했다.
 - [x] 기존 DB용 사전 조회 SQL과 데이터 변환 후 CHECK를 교체하는 마이그레이션 SQL의 작성·검토를 완료했다.
-- [ ] 학원 로컬 DB에 마이그레이션을 적용하고 같은 기준으로 검증한다.
+- [x] 학원 로컬 `zipdav2` 옵션 스키마를 최신 `003_create_property_option_tables.sql` 기준으로 정합화하고 검증했다.
 - [ ] 팀 공유 DB의 적용 필요 여부와 적용 상태를 확인한다.
 
 ### 조회와 기준정보
@@ -248,13 +251,13 @@ Windows에서 기존 관련 테스트를 확인하는 명령 예시:
 - [x] 요청 내부의 중복 optionCode를 검사한다.
 - [x] 코드 존재·활성·삭제 여부와 유형별 허용 규칙을 일괄 조회한다.
 - [x] 등록 가능 여부를 검사한다.
-- [ ] 필수 옵션 누락을 검사한다.
+- [x] 필수 옵션 누락을 검사한다.
 - [x] 문자열 옵션값을 검증한다. `"false"`를 미입력으로 취급하지 않는다.
 - [ ] 구체 옵션 예외를 사용하고 field error 지원 방식·HTTP 상태를 공통 예외 처리와 맞춘다.
 - [x] `(propertyId, optionCodeId)` 활성 중복을 애플리케이션에서 검사한다.
 - [ ] 활성 UNIQUE 없이 동시 중복을 막는 상위 트랜잭션 잠금 정책을 합의하고 적용한다.
 - [x] 검증 후 `property_option`을 저장한다.
-- [ ] 생성 이력을 기록한다.
+- [x] 생성 이력을 기록한다.
 
 ### 8.3 수정·제거·이력 처리
 
@@ -262,7 +265,7 @@ Windows에서 기존 관련 테스트를 확인하는 명령 예시:
 - [x] 추가 항목은 신규 INSERT하고, 변경 항목은 Entity의 값 변경 메서드로 처리한다.
 - [x] 제거 항목은 BaseAuditEntity의 실제 감사·soft delete 방식으로 처리한다.
 - [ ] 삭제된 항목의 재추가는 새 행으로 저장한다.
-- [ ] 변경 전후 값과 필요한 메타데이터를 history에 기록한다.
+- [x] 변경 전후 값과 필요한 메타데이터를 history에 기록한다.
 - [ ] `(property_revision_id, property_option_id)` 이력 UNIQUE와 기록 횟수가 충돌하지 않도록 한다.
 - [ ] 상위 매물 트랜잭션에서 매물·옵션·revision·history가 함께 commit/rollback되게 한다.
 - [ ] 항목별 반복 조회로 N+1을 만들지 않는다.
@@ -273,7 +276,7 @@ Windows에서 기존 관련 테스트를 확인하는 명령 예시:
 
 - [x] 정상 등록과 `"false"` 저장
 - [x] 중복 코드, 없는 코드, 비활성/삭제 코드, 다른 유형 코드 거절
-- [ ] 필수 옵션 누락 거절
+- [x] 필수 옵션 누락 거절
 - [x] 잘못된 값과 등록 비활성 옵션 거절
 - [x] 추가·값 변경·soft delete 확인
 - [ ] 삭제 후 재추가와 이력 확인
@@ -281,7 +284,7 @@ Windows에서 기존 관련 테스트를 확인하는 명령 예시:
 - [ ] propertyType 변경 후 비허용 옵션 잔존 방지
 - [ ] 실패 시 매물·옵션·revision·history 전체 rollback
 - [ ] 동시에 같은 옵션을 추가해도 활성 중복이 남지 않음
-- [ ] 기존 활성 중복 데이터가 있다면 정상 행으로 조용히 간주하지 않고 처리 방침 확인
+- [x] 기존 활성 중복 데이터가 있다면 정상 행으로 조용히 간주하지 않고 오류 처리
 
 ## 9. PR-009 상세 연동 — 별도 후속 범위
 
@@ -321,7 +324,7 @@ java -version
 | 2026-09-07 값 정책 정합화 | 003·Entity·Validator·Enum 대조, DB README 정정, 기존 DB용 사전 조회·ALTER SQL 준비 | Java 21.0.12에서 `compileJava` 성공, Validator·QueryService·QueryDSL Repository·Repository 구조 테스트 성공. 실제 DB SQL 미실행. Postman 정상 조회·400은 사용자 직접 검증 |
 | 2026-09-07 집 DB 마이그레이션 | 실제 SQL 표현식을 `CAST(... AS BINARY)`로 정리하고 seed 원본 조회 SQL 준비 | 사용자 확인: 네 컬럼·CHECK 정합, invalid 0건, 경고 0건, 원장 11개·APARTMENT 매핑 11개 유지. 학원·공유 DB 미확인 |
 | 2026-09-07 옵션 내부 쓰기 | 옵션 생성·저장, 값 변경, soft delete와 코드·유형·값·중복 검증 구현 | `compileJava`, 옵션 관련 테스트, `git diff --check` 성공. 이력·필수 옵션·PR-011/012 연동·동시성 잠금은 미구현 |
-
+| 2026-09-07 옵션 쓰기 보완 | CREATE·UPDATE·SOFT_DELETE 옵션 이력 저장, 필수 옵션 누락 검증 구현 | `PropertyOptionCommandServiceTest`, `PropertyOptionTest`, `PropertyOptionQueryDSLRepositoryTest`, `compileJava`, `git diff --check` 성공. PR-011은 `options[]` 계약 미확정, PR-012는 수정 구현·계약 미확인, 동시성 잠금은 팀 정책 대기 |
 다음 작업 종료 시 아래 항목을 갱신한다.
 
 - 작업일 / 장소:

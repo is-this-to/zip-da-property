@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api")
+@RequestMapping("/api/property")
 public class PropertyOptionController {
 
     private final PropertyOptionQueryService propertyOptionQueryService;
