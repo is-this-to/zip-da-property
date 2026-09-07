@@ -62,6 +62,10 @@ public class RegionService {
         return regionQueryDSLRepository.findChildRegions(parentRegionId);
     }
 
+    public List<RegionSummaryResponse> searchRegions(String keyword){
+        return regionQueryDSLRepository.findRegionsByKeyword(keyword);
+    }
+
     public RegionDetailResponse getRegionDetail(
             Long regionId,
             Integer kakaoMapLevel

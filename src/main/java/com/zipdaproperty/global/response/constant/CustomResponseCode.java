@@ -33,12 +33,41 @@ public enum CustomResponseCode {
     PROPERTY_NOT_FOUND(HttpStatus.NOT_FOUND, "P10"),
     PROPERTY_CREATE_NOT_ALLOWED(HttpStatus.FORBIDDEN, "P11"),
     PROPERTY_OWNERSHIP_REQUIRED(HttpStatus.FORBIDDEN, "P12"),
+
+    // 찜 관련
     FAVORITE_TARGET_UNAVAILABLE(HttpStatus.NOT_FOUND, "P13"),
 
+    // 옵션 관련
+    OPTION_CODE_NOT_FOUND(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P14"
+    ),
+    OPTION_NOT_ALLOWED_FOR_PROPERTY_TYPE(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P15"
+    ),
+    OPTION_VALUE_INVALID(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P16"
+    ),
+    OPTION_VALUE_REQUIRED(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P17"
+    ),
+
     // Property 멱등 요청 관련
-    IDEMPOTENCY_KEY_REQUIRED(HttpStatus.BAD_REQUEST, "P14"),
-    IDEMPOTENCY_CONFLICT(HttpStatus.CONFLICT, "P15"),
-    IDEMPOTENCY_REQUEST_IN_PROGRESS(HttpStatus.CONFLICT, "P16"),
+    IDEMPOTENCY_KEY_REQUIRED(
+            HttpStatus.BAD_REQUEST,
+            "P20"
+    ),
+    IDEMPOTENCY_CONFLICT(
+            HttpStatus.CONFLICT,
+            "P21"
+    ),
+    IDEMPOTENCY_REQUEST_IN_PROGRESS(
+            HttpStatus.CONFLICT,
+            "P22"
+    ),
 
     // 파일 처리 관련
     FILE_MANAGED_ERROR(
