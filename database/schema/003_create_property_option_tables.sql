@@ -108,7 +108,7 @@ CREATE TABLE `property_type_option`
     CONSTRAINT `chk_property_type_option_default_value`
         CHECK (
             `default_value` IS NULL
-                OR BINARY `default_value` IN ('true', 'false')
+                OR CAST(`default_value` AS BINARY) IN ('true', 'false')
             ),
 
     CONSTRAINT `chk_property_type_option_action_source_enum`
@@ -153,7 +153,7 @@ CREATE TABLE `property_option`
 
     CONSTRAINT `chk_property_option_value`
         CHECK (
-            BINARY `option_value` IN ('true', 'false')
+            CAST(`option_value` AS BINARY) IN ('true', 'false')
             ),
 
     CONSTRAINT `chk_property_option_display_order`
@@ -233,13 +233,13 @@ CREATE TABLE `property_option_history`
     CONSTRAINT `chk_property_option_history_before_value`
         CHECK (
             `before_value` IS NULL
-                OR BINARY `before_value` IN ('true', 'false')
+                OR CAST(`before_value` AS BINARY) IN ('true', 'false')
             ),
 
     CONSTRAINT `chk_property_option_history_after_value`
         CHECK (
             `after_value` IS NULL
-                OR BINARY `after_value` IN ('true', 'false')
+                OR CAST(`after_value` AS BINARY) IN ('true', 'false')
             ),
 
     CONSTRAINT `chk_property_option_history_before_verified_bool`

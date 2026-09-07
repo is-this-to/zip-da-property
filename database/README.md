@@ -40,9 +40,9 @@ Service 및 Repository 계층에서 검증합니다. 참조 대상의 삭제·�
 
 ## 옵션 영역의 저장 정책
 
-- 옵션 현재값은 `option_value VARCHAR(300)`에 `있음` 또는 `없음`으로 저장합니다.
-- 유형별 기본값은 `default_value VARCHAR(300)`이며, 미확인은 NULL로 구분합니다.
-- 옵션 이력은 `before_value`, `after_value`에 문자열 값을 저장합니다.
+- 옵션 현재값은 `option_value VARCHAR(5)`에 정확히 소문자 문자열 `true` 또는 `false`로 저장합니다.
+- 유형별 기본값은 nullable `default_value VARCHAR(5)`이며, 미확인은 NULL로 구분합니다.
+- 옵션 이력의 nullable `before_value`, `after_value`도 `VARCHAR(5)`의 `true` 또는 `false`를 저장합니다.
   `changed_fields VARCHAR(500)`는 변경 필드명을 쉼표로 구분해 저장하며 JSON을 사용하지 않습니다.
 - 옵션의 `value_type`, `unit`, `allowed_values_json`은 사용하지 않습니다.
 - PR-049는 옵션 메타데이터를 record DTO 목록으로 반환하며,
@@ -50,3 +50,5 @@ Service 및 Repository 계층에서 검증합니다. 참조 대상의 삭제·�
 - 옵션 원장 코드 UNIQUE와 revision·옵션 행 조합의 이력 UNIQUE는 유지합니다.
 - 이 정책은 옵션 영역에만 적용하며 001 및 다른 도메인의 값 저장 구조를 변경하지 않습니다.
 - 수정된 003은 팀 SQL 통합 후 적용할 생성 DDL입니다. 기존 테이블에 그대로 재실행하지 않습니다.
+- 기존 로컬 테이블은 `database/manual/001_check_property_option_boolean_values.sql`로 먼저 확인하고,
+  결과를 검토한 뒤 `002_migrate_property_option_boolean_values.sql`을 HeidiSQL에서 단계별로 적용합니다.

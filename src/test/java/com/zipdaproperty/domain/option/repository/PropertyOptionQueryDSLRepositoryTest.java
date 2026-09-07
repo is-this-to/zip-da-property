@@ -83,6 +83,21 @@ class PropertyOptionQueryDSLRepositoryTest {
     }
 
     @Test
+    void findActiveOptionCodesByCodes_filtersActiveAndSoftDelete() {
+        JPAQuery<PropertyOptionCode> query = new CapturingQuery<>();
+        when(factory.selectFrom(propertyOptionCode)).thenReturn(query);
+
+        repository.findActiveOptionCodesByCodes(List.of("AIR_CONDITIONER", "BED"));
+
+        assertThat(query.getMetadata().getWhere().toString())
+                .contains(
+                        "propertyOptionCode.optionCode in [AIR_CONDITIONER, BED]",
+                        "propertyOptionCode.deletedAt is null",
+                        "propertyOptionCode.active = true"
+                );
+    }
+
+    @Test
     void findActiveOptionCode_noResult_returnsEmptyOptional() {
         JPAQuery<PropertyOptionCode> query = new CapturingQuery<>();
         when(factory.selectFrom(propertyOptionCode)).thenReturn(query);

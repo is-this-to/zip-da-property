@@ -7,7 +7,7 @@
 ## 1. 이 문서를 읽는 기준
 
 
-이번 통합은 문서 편집이다. 실제 Java 프로젝트, 실행 중인 DB, Slack, Notion, 원본 Excel을 다시 조회하거나 컴파일한 것은 아니다. 아래 상태를 구분한다.
+2026-09-07 기준 집 DB와 학원 `zipdav2`의 옵션 스키마는 사용자가 직접 확인하고 SQL을 실행해 최신 `database/schema/003_create_property_option_tables.sql` 기준으로 정합화를 완료했으며, invalid row 0건과 migration 경고 0건을 확인했다. 현재 Java 옵션 내부 쓰기 로직과 관련 자동 테스트도 확인을 완료했지만, 옵션 쓰기 기능의 Postman 검증은 아직 수행하지 않았다. 이번 문서 갱신 과정에서는 DB를 다시 조사하거나 SQL을 재실행하지 않았다. 아래 상태를 구분한다.
 
 - **완료 보고**: 사용자가 전달한 최신 코덱스 작업 결과에 명시된 내용
 - **문서 기록**: 현재 소스에서 재확인하지 않은 내용
@@ -25,7 +25,8 @@
 
 대화와 기존 문서 기준으로 PR-011·012의 최상위 Controller와 매물 쓰기 트랜잭션은 임호탁 담당이다. 장수린은 옵션 조회·검증·현재값·이력 처리 로직을 제공한다. 연동 시 실제 담당 코드와 합의된 경계를 확인한다.
 
-별도의 `/api/property-options` 등록·수정·삭제 API를 만들지 않는다. `PropertyOptionCommandService`는 가능한 내부 서비스명 예시이지, 이미 존재하는 클래스나 확정된 이름이 아니다.
+별도의 `/api/property-options` 등록·수정·삭제 API를 만들지 않는다. 옵션 생성·수정·soft delete는 실제 내부
+`PropertyOptionCommandService`에서 처리하며, PR-011·012 계약 확정 후 매물 쓰기 흐름에 연결한다.
 
 ## 3. 유지할 옵션 정책
 
@@ -39,7 +40,7 @@
 - 위 규칙은 옵션 값 모델에 대한 것이다. PropertyRevision 등 다른 도메인의 JSON까지 제거하라는 뜻이 아니다.
 - `filterable`, `registrationEnabled`, `required` 같은 메타데이터 Boolean은 그대로 유지한다.
 
-주의: 기존 문서에는 `VARCHAR(300)`과 `VARCHAR(5)`, Validator의 `있음/없음`과 `"true"/"false"`가 섞여 있다. 정책과 실제 반영 상태를 구분해야 한다. 이번 문서 통합만으로 Validator·Entity·SQL 수정이 완료됐다고 판단하지 않는다.
+2026-09-07 재확인 결과 신규 DB용 003 DDL, Entity, Validator는 `VARCHAR(5)`와 정확한 소문자 `"true"/"false"` 정책으로 일치한다. 기존 로컬 DB는 CREATE DDL을 재실행하지 않고 별도 사전 조회와 수동 ALTER 절차를 사용한다.
 
 ### 3.2 논리 참조와 활성 중복
 
@@ -108,6 +109,7 @@ PR-049는 공용 메타데이터 조회이므로 `filterable`과 `registrationEn
 | 실제 매물 옵션 | `entity/PropertyOption.java` |
 | 옵션 변경 이력 | `entity/PropertyOptionHistory.java` |
 | 값 검증 | `validator/OptionValueValidator.java` |
+| 옵션 내부 쓰기 | `service/PropertyOptionCommandService.java` |
 
 목록 DTO는 `List<PropertyOptionCodeResponseDTO> items`를 담는다. 문서 기록상 record와 `List.copyOf`를 사용하며 내부 PK·감사·삭제 필드를 응답에 노출하지 않는다. 정확한 생성자 및 어노테이션은 실제 코드 기준이다.
 
@@ -149,12 +151,32 @@ existsByPropertyTypeAndOptionCodeIdAndDeletedAtIsNull(
 
 - Java: Microsoft OpenJDK 21.0.12
 - `compileJava`: 성공
+- `OptionValueValidatorTest`: 성공
 - `PropertyOptionQueryServiceTest`: 성공
 - `PropertyOptionQueryDSLRepositoryTest`: 성공
 - `OptionRepositoryMethodTest`: 성공
 - `git diff --check`: 오류 없음 보고
 
-위 결과는 사용자가 전달한 실행 보고다. 전체 테스트, 실제 MySQL, Postman, OpenAPI 검증까지 모두 통과했다는 의미는 아니다. 과거의 “테스트 없음”, “집 JAVA_HOME 미설정”, “원격보다 7커밋 앞섬”은 현재 상태로 유지하지 않는다.
+위 Java·Gradle 결과는 현재 작업 환경에서 직접 실행한 결과다. Postman과 집 로컬 DB 결과는 사용자의 직접 검증 보고를 반영했다. 전체 테스트, 학원·공유 MySQL, OpenAPI 검증까지 모두 통과했다는 의미는 아니다. 과거의 “테스트 없음”, “집 JAVA_HOME 미설정”, “원격보다 7커밋 앞섬”은 현재 상태로 유지하지 않는다.
+
+2026-09-07 정합화 작업에서는 신규 DB용 003 DDL과 네 옵션 값 컬럼, Entity 매핑, Validator, Enum을 실제 소스에서 대조했다. Codex가 DB에 직접 접속하지는 않았지만, 사용자가 집 DB에서 마이그레이션과 검증을 완료한 결과를 환경별 상태에 반영했다. 이 작업에서 실행한 컴파일과 테스트 결과는 아래 작업 기록에 남긴다.
+
+### 옵션 내부 쓰기 구현 상태
+
+- [x] 옵션 생성 및 `property_option` 저장 내부 로직
+- [x] 옵션 값 변경 Service 흐름
+- [x] 옵션 soft delete Service 흐름
+- [x] 옵션 코드 존재 여부와 `is_active`, `deleted_at` 검증
+- [x] 매물 유형별 허용 옵션 검증
+- [x] 생성·수정의 `registrationEnabled` 검증. 삭제에서는 기존 활성 옵션 제거를 위해 적용하지 않음
+- [x] 옵션 값이 정확한 소문자 문자열 `"true"`, `"false"`인지 검증
+- [x] 동일 요청 내 `optionCode` 중복 검증
+- [x] `(propertyId, optionCodeId)` 활성 중복 검증
+- [ ] 옵션 이력 저장
+- [ ] 필수 옵션 누락 검증
+- [ ] PR-011 `options[]` 계약 및 매물 등록 연동
+- [ ] PR-012 매물 수정 연동
+- [ ] 활성 UNIQUE 없이 동시 중복을 막는 상위 트랜잭션 잠금 정책
 
 ## 6. 다음 작업 전 확인 체크리스트
 
@@ -162,34 +184,41 @@ existsByPropertyTypeAndOptionCodeIdAndDeletedAtIsNull(
 
 ### 코드·SQL 정합성
 
-- [ ] 옵션 SQL의 `option_value`, `default_value`, `before_value`, `after_value` 길이·nullability·CHECK를 확인한다.
-- [ ] Entity 길이와 SQL 길이가 일치하는지 확인한다. 예전 300을 보고 무조건 5로 바꾸지 않고 실제 차이를 먼저 찾는다.
-- [ ] Validator가 소문자 문자열 `"true"`, `"false"`만 허용하는지 확인한다.
-- [ ] Enum·SQL·도메인 메서드에 `RESTORE`나 복원 동작이 남아 있는지 확인한다.
-- [ ] SQL CHECK의 대소문자 판정이 목표 정책과 일치하는지 실제 DB에서 검증한다.
-- [ ] 물리 FK·활성 generated key가 재도입되지 않았는지 확인한다.
-- [ ] 기존 테이블에 CREATE DDL을 무작정 재실행하지 않는다. 변경이 필요하면 데이터 보존과 적용 SQL을 먼저 검토한다.
+- [x] 옵션 SQL의 `option_value`, `default_value`, `before_value`, `after_value` 길이·nullability·CHECK를 확인했다.
+- [x] Entity 네 값 필드의 길이·nullability가 신규 DB용 003과 일치함을 확인했다.
+- [x] Validator가 정확한 소문자 문자열 `"true"`, `"false"`만 허용하고 null·빈 값·대문자·구 값을 거절함을 테스트했다.
+- [x] 옵션 Enum·SQL·도메인 코드에 복원용 change type이나 복원 동작이 없음을 확인했다.
+- [x] 집 로컬 DB에서 네 값 컬럼의 `VARCHAR(5)`, `CAST(... AS BINARY)` CHECK, 소문자 `true/false`, invalid 0건을 확인했다.
+- [x] 신규 DB용 003에 물리 FK·활성 generated key·옵션 활성 UNIQUE가 없음을 확인했다.
+- [x] 기존 DB용 사전 조회 SQL과 데이터 변환 후 CHECK를 교체하는 마이그레이션 SQL의 작성·검토를 완료했다.
+- [ ] 학원 로컬 DB에 마이그레이션을 적용하고 같은 기준으로 검증한다.
+- [ ] 팀 공유 DB의 적용 필요 여부와 적용 상태를 확인한다.
 
 ### 조회와 기준정보
 
-- [ ] 두 테이블의 삭제 조건, 옵션 코드 활성 조건, 유형 조건을 확인한다.
-- [ ] 문서 기록의 두 번 일괄 조회와 Service 정렬을 실제 코드에서 확인한다. 단일 join으로 불필요하게 재작성하지 않는다.
+- [x] 조회 Repository에서 유형 매핑·옵션 코드의 삭제 조건, 코드 활성 조건, 요청 유형 조건을 확인했다.
+- [x] QueryService가 유형 매핑과 코드 원장을 두 번 일괄 조회하고 응답을 정렬하는 구조를 실제 코드에서 확인했다.
 - [ ] 실제 쿼리 횟수와 정렬을 확인한다. Mockito/쿼리 조건 테스트만으로 MySQL 실행 검증을 대신하지 않는다.
-- [ ] 집·학원 DB에 실제 옵션 원장과 유형 매핑 seed가 있는지 확인한다.
+- [x] 집 DB의 옵션 원장 11개와 APARTMENT 유형 매핑 11개, 현재값·이력 0개를 확인했다.
+- [ ] 학원 DB에 집 DB와 같은 옵션 원장·APARTMENT 매핑 seed를 재현한다.
 - [ ] seed의 코드·표시명·카테고리·capability·필수 여부·기본값·표시 순서를 팀 데이터 기준으로 확인한다.
+- [x] 집 DB의 전체 seed 대상 컬럼과 논리 연결 상태를 추출하는 읽기 전용 SELECT SQL을 준비했다.
+- [ ] 집 DB SELECT 결과를 전달받아 실제 값에 근거한 멱등 seed INSERT SQL을 작성한다.
 - [ ] 주차·반려동물 등 Property 정형 필드와 중복되는 옵션을 임의로 seed에 추가하지 않는다.
 - [ ] 과거 문서의 5분 TTL 캐시·변경 시 무효화 요구가 여전히 유효한지 확인한다. 완료로 간주하거나 임의 추가하지 않는다.
 
 ## 7. PR-049 검증 목록
 
 - [ ] 네 유형 각각의 정상 응답, 특히 ROOM의 허용 옵션만 반환
+- [x] Postman에서 `propertyType=APARTMENT` 정상 조회 200과 응답 item 일곱 필드 확인
 - [ ] 인증 헤더 없이 200 응답
 - [ ] 삭제된 매핑·삭제된 코드·비활성 코드 제외
 - [ ] 동일 순위의 보조 정렬까지 일정함
 - [ ] 빈 결과는 200과 `items=[]`
-- [ ] query 누락·알 수 없는 유형은 400, 공통 오류 코드 확인
+- [x] Postman에서 잘못된 query 요청의 400 공통 오류 응답 확인
+- [ ] query 누락과 알 수 없는 유형을 각각 나누어 400 응답 확인
 - [ ] 지원하지 않는 POST는 405, 공통 오류 코드 확인
-- [ ] 일곱 응답 필드와 capability 값 확인, 내부 PK·감사 필드 미노출
+- [ ] 네 유형 전체에서 일곱 응답 필드와 capability 값 확인, 내부 PK·감사 필드 미노출
 - [ ] OpenAPI operation의 PUBLIC 표시와 실제 접근 일치
 - [ ] 프런트·팀 API 문서가 최신 일곱 필드와 일치하는지 확인
 
@@ -216,19 +245,22 @@ Windows에서 기존 관련 테스트를 확인하는 명령 예시:
 
 ### 8.2 등록 처리
 
-- [ ] 요청 내부의 중복 optionCode를 검사한다.
-- [ ] 코드 존재·활성·삭제 여부와 유형별 허용 규칙을 일괄 조회한다.
-- [ ] 등록 가능 여부와 필수 옵션 누락을 검사한다.
-- [ ] 문자열 옵션값을 검증한다. `"false"`를 미입력으로 취급하지 않는다.
+- [x] 요청 내부의 중복 optionCode를 검사한다.
+- [x] 코드 존재·활성·삭제 여부와 유형별 허용 규칙을 일괄 조회한다.
+- [x] 등록 가능 여부를 검사한다.
+- [ ] 필수 옵션 누락을 검사한다.
+- [x] 문자열 옵션값을 검증한다. `"false"`를 미입력으로 취급하지 않는다.
 - [ ] 구체 옵션 예외를 사용하고 field error 지원 방식·HTTP 상태를 공통 예외 처리와 맞춘다.
-- [ ] 활성 중복 검사와 합의한 동시성 제어를 적용한다.
-- [ ] 검증 후 `property_option`을 저장하고 확정된 정책에 따라 이력을 기록한다.
+- [x] `(propertyId, optionCodeId)` 활성 중복을 애플리케이션에서 검사한다.
+- [ ] 활성 UNIQUE 없이 동시 중복을 막는 상위 트랜잭션 잠금 정책을 합의하고 적용한다.
+- [x] 검증 후 `property_option`을 저장한다.
+- [ ] 생성 이력을 기록한다.
 
 ### 8.3 수정·제거·이력 처리
 
 - [ ] 기존 활성 옵션을 일괄 조회하고 요청과 비교한다.
-- [ ] 추가 항목은 INSERT, 변경 항목은 확정된 현재값 변경 방식으로 처리한다.
-- [ ] 제거 항목은 BaseAuditEntity의 실제 감사·soft delete 방식으로 처리한다.
+- [x] 추가 항목은 신규 INSERT하고, 변경 항목은 Entity의 값 변경 메서드로 처리한다.
+- [x] 제거 항목은 BaseAuditEntity의 실제 감사·soft delete 방식으로 처리한다.
 - [ ] 삭제된 항목의 재추가는 새 행으로 저장한다.
 - [ ] 변경 전후 값과 필요한 메타데이터를 history에 기록한다.
 - [ ] `(property_revision_id, property_option_id)` 이력 UNIQUE와 기록 횟수가 충돌하지 않도록 한다.
@@ -239,10 +271,12 @@ Windows에서 기존 관련 테스트를 확인하는 명령 예시:
 
 ### 8.4 쓰기 테스트
 
-- [ ] 정상 등록과 `"false"` 저장
-- [ ] 중복 코드, 없는 코드, 비활성/삭제 코드, 다른 유형 코드 거절
-- [ ] 필수 누락, 잘못된 값, 등록 비활성 옵션 거절
-- [ ] 추가·값 변경·soft delete·재추가와 이력 확인
+- [x] 정상 등록과 `"false"` 저장
+- [x] 중복 코드, 없는 코드, 비활성/삭제 코드, 다른 유형 코드 거절
+- [ ] 필수 옵션 누락 거절
+- [x] 잘못된 값과 등록 비활성 옵션 거절
+- [x] 추가·값 변경·soft delete 확인
+- [ ] 삭제 후 재추가와 이력 확인
 - [ ] options 미전달/null/빈 배열의 합의된 수정 동작
 - [ ] propertyType 변경 후 비허용 옵션 잔존 방지
 - [ ] 실패 시 매물·옵션·revision·history 전체 rollback
@@ -284,6 +318,9 @@ java -version
 |---|---|---|
 | 2026-09-06 전달 보고 | DTO 접미사·참조 변경, existsBy 네이밍, 구체 예외 4개 | 컴파일·관련 테스트 3종 성공 보고 |
 | 2026-09-06 문서 정리 | 옵션 정책·진행 상태 정리, 완료/확인 필요 구분 | 문서 검토만 수행. 코드·DB 미변경 |
+| 2026-09-07 값 정책 정합화 | 003·Entity·Validator·Enum 대조, DB README 정정, 기존 DB용 사전 조회·ALTER SQL 준비 | Java 21.0.12에서 `compileJava` 성공, Validator·QueryService·QueryDSL Repository·Repository 구조 테스트 성공. 실제 DB SQL 미실행. Postman 정상 조회·400은 사용자 직접 검증 |
+| 2026-09-07 집 DB 마이그레이션 | 실제 SQL 표현식을 `CAST(... AS BINARY)`로 정리하고 seed 원본 조회 SQL 준비 | 사용자 확인: 네 컬럼·CHECK 정합, invalid 0건, 경고 0건, 원장 11개·APARTMENT 매핑 11개 유지. 학원·공유 DB 미확인 |
+| 2026-09-07 옵션 내부 쓰기 | 옵션 생성·저장, 값 변경, soft delete와 코드·유형·값·중복 검증 구현 | `compileJava`, 옵션 관련 테스트, `git diff --check` 성공. 이력·필수 옵션·PR-011/012 연동·동시성 잠금은 미구현 |
 
 다음 작업 종료 시 아래 항목을 갱신한다.
 

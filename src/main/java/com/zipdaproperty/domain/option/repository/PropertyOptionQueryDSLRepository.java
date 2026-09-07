@@ -70,6 +70,20 @@ public class PropertyOptionQueryDSLRepository {
                 .fetch();
     }
 
+    public List<PropertyOptionCode> findActiveOptionCodesByCodes(Collection<String> optionCodes) {
+        if (optionCodes.isEmpty()) {
+            return List.of();
+        }
+
+        return queryFactory.selectFrom(propertyOptionCode)
+                .where(
+                        propertyOptionCode.optionCode.in(optionCodes),
+                        propertyOptionCode.deletedAt.isNull(),
+                        propertyOptionCode.active.isTrue()
+                )
+                .fetch();
+    }
+
     public Optional<PropertyOptionCode> findActiveOptionCode(String optionCode) {
         return Optional.ofNullable(
                 queryFactory.selectFrom(propertyOptionCode)
