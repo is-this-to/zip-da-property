@@ -264,7 +264,7 @@ Windows에서 기존 관련 테스트를 확인하는 명령 예시:
 - [ ] 기존 활성 옵션을 일괄 조회하고 요청과 비교한다.
 - [x] 추가 항목은 신규 INSERT하고, 변경 항목은 Entity의 값 변경 메서드로 처리한다.
 - [x] 제거 항목은 BaseAuditEntity의 실제 감사·soft delete 방식으로 처리한다.
-- [ ] 삭제된 항목의 재추가는 새 행으로 저장한다.
+- [x] 삭제된 항목의 재추가는 새 행으로 저장한다.
 - [x] 변경 전후 값과 필요한 메타데이터를 history에 기록한다.
 - [ ] `(property_revision_id, property_option_id)` 이력 UNIQUE와 기록 횟수가 충돌하지 않도록 한다.
 - [ ] 상위 매물 트랜잭션에서 매물·옵션·revision·history가 함께 commit/rollback되게 한다.
