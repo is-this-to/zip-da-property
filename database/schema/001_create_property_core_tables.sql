@@ -230,11 +230,7 @@ CREATE TABLE `property_revision`
             )),
 
     INDEX `idx_property_revision_timeline`
-        (`property_id`, `occurred_at`),
-
-    CONSTRAINT `fk_property_revision_property`
-        FOREIGN KEY (`property_id`)
-            REFERENCES `property` (`property_id`)
+        (`property_id`, `occurred_at`)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COMMENT = '매물 전체 변경 이력과 변경 전후 스냅샷';
@@ -290,15 +286,7 @@ CREATE TABLE `property_status_history`
             )),
 
     INDEX `idx_property_status_history_timeline`
-        (`property_id`, `occurred_at`),
-
-    CONSTRAINT `fk_property_status_history_property`
-        FOREIGN KEY (`property_id`)
-            REFERENCES `property` (`property_id`),
-
-    CONSTRAINT `fk_property_status_history_revision`
-        FOREIGN KEY (`property_revision_id`)
-            REFERENCES `property_revision` (`property_revision_id`)
+        (`property_id`, `occurred_at`)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COMMENT = '매물 상태 변경 이력';
@@ -351,15 +339,7 @@ CREATE TABLE `property_publisher_snapshot`
             )),
 
     INDEX `idx_property_publisher_snapshot_timeline`
-        (`property_id`, `captured_at`),
-
-    CONSTRAINT `fk_property_publisher_snapshot_property`
-        FOREIGN KEY (`property_id`)
-            REFERENCES `property` (`property_id`),
-
-    CONSTRAINT `fk_property_publisher_snapshot_revision`
-        FOREIGN KEY (`property_revision_id`)
-            REFERENCES `property_revision` (`property_revision_id`)
+        (`property_id`, `captured_at`)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COMMENT = '매물 등록 주체 정보 스냅샷';

@@ -1,8 +1,8 @@
 package com.zipdaproperty.domain.property.controller;
 
+import com.zipdaproperty.domain.property.idempotency.service.PropertyIdempotencyService;
 import com.zipdaproperty.domain.property.request.PropertyCreateRequest;
 import com.zipdaproperty.domain.property.response.PropertyCreateResponse;
-import com.zipdaproperty.domain.property.service.PropertyCreateService;
 import com.zipdaproperty.global.config.openapi.CustomApiResponse;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.response.GlobalResponseDTO;
@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,10 +27,10 @@ import org.springframework.web.bind.annotation.RestController;
 )
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/properties")
+@RequestMapping("/api/property/properties")
 public class PropertyController {
 
-    private final PropertyCreateService propertyCreateService;
+    private final PropertyIdempotencyService propertyIdempotencyService;
 
     @Operation(
             summary = "매물 등록",
@@ -38,6 +39,8 @@ public class PropertyController {
                     일반 회원은 집주인 직접 등록만 가능하고,
                     중개사는 중개사 매물 등록만 가능합니다.
                     등록된 매물은 공개 검수 대기 상태로 생성됩니다.
+                    동일한 Idempotency-Key로 동일 요청을 반복하면
+                    최초 요청의 응답을 재사용합니다.
                     """
     )
     @CustomApiResponse({
@@ -46,6 +49,9 @@ public class PropertyController {
             CustomResponseCode.INVALID_REQUEST,
             CustomResponseCode.INVALID_PRICE_COMBINATION,
             CustomResponseCode.PROPERTY_CREATE_NOT_ALLOWED,
+            CustomResponseCode.IDEMPOTENCY_KEY_REQUIRED,
+            CustomResponseCode.IDEMPOTENCY_CONFLICT,
+            CustomResponseCode.IDEMPOTENCY_REQUEST_IN_PROGRESS,
             CustomResponseCode.DB_ERROR,
             CustomResponseCode.DB_DUPLICATED_KEY_ERROR,
             CustomResponseCode.SYSTEM_ERROR
@@ -53,6 +59,17 @@ public class PropertyController {
     @PreAuthorize("hasAnyRole('USER', 'AGENT')")
     @PostMapping
     public ResponseEntity<GlobalResponseDTO<PropertyCreateResponse>> createProperty(
+            @Parameter(
+                    description = "매물 등록 요청의 중복 처리를 방지하는 고유 키",
+                    required = true,
+                    example = "property-create-1001"
+            )
+            @RequestHeader(
+                    name = "Idempotency-Key",
+                    required = false
+            )
+            String idempotencyKey,
+
             @Valid
             @RequestBody
             PropertyCreateRequest request,
@@ -60,10 +77,12 @@ public class PropertyController {
             @Parameter(hidden = true)
             ActorContext actorContext
     ) {
-        PropertyCreateResponse response = propertyCreateService.create(
-                request.toCommand(),
-                actorContext
-        );
+        PropertyCreateResponse response =
+                propertyIdempotencyService.create(
+                        idempotencyKey,
+                        request.toCommand(),
+                        actorContext
+                );
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
