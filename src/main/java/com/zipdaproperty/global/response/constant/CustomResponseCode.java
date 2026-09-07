@@ -55,6 +55,16 @@ public enum CustomResponseCode {
             "P17"
     ),
 
+    // 신고 관련
+    DUPLICATE_ACTIVE_REPORT(
+            HttpStatus.CONFLICT,
+            "P18"
+    ),
+    RATE_LIMITED(
+            HttpStatus.TOO_MANY_REQUESTS,
+            "P19"
+    ),
+
     // Property 멱등 요청 관련
     IDEMPOTENCY_KEY_REQUIRED(
             HttpStatus.BAD_REQUEST,
