@@ -9,6 +9,7 @@
 
 1. `001_create_property_core_tables.sql`
 2. `002_create_property_favorite_table.sql`
+3. `003_create_property_option_tables.sql`
 
 ## 실행 전 확인
 
@@ -26,7 +27,28 @@
 
 ## 외래키 정책
 
-테이블 간 참조 관계는 논리 외래키로 관리하며, 데이터베이스의 물리적인
-FOREIGN KEY 제약은 추가하지 않습니다.
+서비스 또는 데이터베이스 경계와 관계없이 모든 테이블 간 참조는 논리 외래키로 관리합니다.
+동일한 Property DB 내부 관계에도 물리 `FOREIGN KEY`를 생성하지 않습니다.
 
-참조 무결성과 대상 데이터 존재 여부는 애플리케이션의 Service 및 Repository 계층에서 검증합니다.
+참조 ID 컬럼은 유지하며, 대상 데이터의 존재 여부·활성 상태·soft delete·권한·업무 허용 여부는
+Service 및 Repository 계층에서 검증합니다. 참조 대상의 삭제·변경과 동시에 처리되는 경우에도
+무결성이 유지되는지 트랜잭션 및 동시성 테스트로 확인합니다.
+
+논리 외래키 정책은 `PRIMARY KEY`, `UNIQUE`, `CHECK`, 인덱스를 제거한다는 의미가 아닙니다.
+활성 UNIQUE 사용 여부는 도메인별 정책을 따릅니다. 찜의 활성 UNIQUE는 유지하고,
+옵션의 유형별 매핑·현재값에는 활성 UNIQUE를 사용하지 않습니다.
+
+## 옵션 영역의 저장 정책
+
+- 옵션 현재값은 `option_value VARCHAR(5)`에 정확히 소문자 문자열 `true` 또는 `false`로 저장합니다.
+- 유형별 기본값은 nullable `default_value VARCHAR(5)`이며, 미확인은 NULL로 구분합니다.
+- 옵션 이력의 nullable `before_value`, `after_value`도 `VARCHAR(5)`의 `true` 또는 `false`를 저장합니다.
+  `changed_fields VARCHAR(500)`는 변경 필드명을 쉼표로 구분해 저장하며 JSON을 사용하지 않습니다.
+- 옵션의 `value_type`, `unit`, `allowed_values_json`은 사용하지 않습니다.
+- PR-049는 옵션 메타데이터를 record DTO 목록으로 반환하며,
+  `valueType`, `unit`, `allowedValues` 응답 필드는 제거했습니다.
+- 옵션 원장 코드 UNIQUE와 revision·옵션 행 조합의 이력 UNIQUE는 유지합니다.
+- 이 정책은 옵션 영역에만 적용하며 001 및 다른 도메인의 값 저장 구조를 변경하지 않습니다.
+- 수정된 003은 팀 SQL 통합 후 적용할 생성 DDL입니다. 기존 테이블에 그대로 재실행하지 않습니다.
+- 기존 로컬 테이블은 `database/manual/001_check_property_option_boolean_values.sql`로 먼저 확인하고,
+  결과를 검토한 뒤 `002_migrate_property_option_boolean_values.sql`을 HeidiSQL에서 단계별로 적용합니다.
