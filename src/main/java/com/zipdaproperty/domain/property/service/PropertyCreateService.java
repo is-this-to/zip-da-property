@@ -12,6 +12,7 @@ import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.repository.PropertyStatusHistoryRepository;
 import com.zipdaproperty.domain.property.response.PropertyCreateResponse;
+import com.zipdaproperty.domain.region.repository.RegionRepository;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
@@ -30,7 +31,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PropertyCreateService {
 
-    private static final String CREATE_REASON_CODE = "PROPERTY_CREATED";
+    private static final String CREATE_REASON_CODE =
+            "PROPERTY_CREATED";
 
     private static final String CREATE_REASON =
             "매물 등록으로 초기 상태가 설정되었습니다.";
@@ -39,7 +41,7 @@ public class PropertyCreateService {
             "regionId",
             "apartmentComplexId",
             "authorMemberId",
-            "publisherType",
+            "publisherType",  // 매물 주체유형
             "propertyType",
             "transactionType",
             "salePrice",
@@ -67,11 +69,22 @@ public class PropertyCreateService {
     );
 
     private final PropertyRepository propertyRepository;
-    private final PropertyRevisionRepository propertyRevisionRepository;
-    private final PropertyStatusHistoryRepository propertyStatusHistoryRepository;
-    private final PropertyPublisherSnapshotRepository propertyPublisherSnapshotRepository;
+
+    private final PropertyRevisionRepository
+            propertyRevisionRepository;
+
+    private final PropertyStatusHistoryRepository
+            propertyStatusHistoryRepository;
+
+    private final PropertyPublisherSnapshotRepository
+            propertyPublisherSnapshotRepository;
+
+    private final RegionRepository regionRepository;
+
     private final PropertyPricePolicy propertyPricePolicy;
+
     private final TsidGenerator tsidGenerator;
+
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -83,6 +96,8 @@ public class PropertyCreateService {
                 command.publisherType(),
                 actorContext
         );
+
+        validateRegion(command.regionId());
 
         propertyPricePolicy.validate(
                 command.transactionType(),
@@ -99,27 +114,33 @@ public class PropertyCreateService {
                 actorContext
         );
 
-        Property savedProperty = propertyRepository.saveAndFlush(property);
+        Property savedProperty =
+                propertyRepository.saveAndFlush(property);
 
         Instant occurredAt = Instant.now();
 
         String changedFieldsJson =
-                objectMapper.writeValueAsString(INITIAL_CHANGED_FIELDS);
+                objectMapper.writeValueAsString(
+                        INITIAL_CHANGED_FIELDS
+                );
 
         String afterSnapshotJson =
                 objectMapper.writeValueAsString(savedProperty);
 
-        PropertyRevision propertyRevision = PropertyRevision.created(
-                savedProperty.getPropertyId(),
-                savedProperty.getVersion(),
-                changedFieldsJson,
-                afterSnapshotJson,
-                actorContext,
-                occurredAt
-        );
+        PropertyRevision propertyRevision =
+                PropertyRevision.created(
+                        savedProperty.getPropertyId(),
+                        savedProperty.getVersion(),
+                        changedFieldsJson,
+                        afterSnapshotJson,
+                        actorContext,
+                        occurredAt
+                );
 
         PropertyRevision savedRevision =
-                propertyRevisionRepository.save(propertyRevision);
+                propertyRevisionRepository.save(
+                        propertyRevision
+                );
 
         saveInitialStatusHistories(
                 savedProperty,
@@ -142,7 +163,10 @@ public class PropertyCreateService {
             PublisherType publisherType,
             ActorContext actorContext
     ) {
-        if (actorContext == null || !actorContext.isMemberRequest()) {
+        if (
+                actorContext == null
+                        || !actorContext.isMemberRequest()
+        ) {
             throw new BusinessException(
                     CustomResponseCode.PROPERTY_CREATE_NOT_ALLOWED,
                     "회원 요청만 매물을 등록할 수 있습니다."
@@ -152,9 +176,16 @@ public class PropertyCreateService {
         ActorRole actorRole = actorContext.role();
 
         boolean isAllowed = switch (actorRole) {
-            case USER -> publisherType == PublisherType.DIRECT_OWNER;
-            case AGENT -> publisherType == PublisherType.AGENT_BROKERAGE;
-            case CS_ADMIN, SALES_ADMIN, SUPER_ADMIN -> false;
+            case USER ->
+                    publisherType
+                            == PublisherType.DIRECT_OWNER;
+
+            case AGENT ->
+                    publisherType
+                            == PublisherType.AGENT_BROKERAGE;
+
+            case CS_ADMIN, SALES_ADMIN, SUPER_ADMIN ->
+                    false;
         };
 
         if (!isAllowed) {
@@ -163,6 +194,26 @@ public class PropertyCreateService {
                     "요청자 역할과 등록 주체 유형이 일치하지 않습니다."
             );
         }
+    }
+
+    private void validateRegion(Long regionId) {
+        if (regionId == null) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_REQUEST,
+                    "지역 ID는 필수입니다."
+            );
+        }
+
+        regionRepository
+                .findByRegionIdAndIsActiveTrue(regionId)
+                .orElseThrow(
+                        () -> new BusinessException(
+                                CustomResponseCode.NOT_FOUND_RESOURCE,
+                                "활성 상태의 지역을 찾을 수 없습니다. "
+                                        + "regionId = "
+                                        + regionId
+                        )
+                );
     }
 
     private void saveInitialStatusHistories(
@@ -228,14 +279,17 @@ public class PropertyCreateService {
             ActorContext actorContext,
             Instant occurredAt
     ) {
-        String snapshotJson = objectMapper.writeValueAsString(
-                Map.of(
-                        "publisherType",
-                        property.getPublisherType().name(),
-                        "publisherMemberId",
-                        actorContext.memberId()
-                )
-        );
+        String snapshotJson =
+                objectMapper.writeValueAsString(
+                        Map.of(
+                                "publisherType",
+                                property
+                                        .getPublisherType()
+                                        .name(),
+                                "publisherMemberId",
+                                actorContext.memberId()
+                        )
+                );
 
         PropertyPublisherSnapshot publisherSnapshot =
                 new PropertyPublisherSnapshot(
@@ -255,6 +309,8 @@ public class PropertyCreateService {
                         actorContext
                 );
 
-        propertyPublisherSnapshotRepository.save(publisherSnapshot);
+        propertyPublisherSnapshotRepository.save(
+                publisherSnapshot
+        );
     }
 }

@@ -9,6 +9,7 @@
 
 1. `001_create_property_core_tables.sql`
 2. `002_create_property_favorite_table.sql`
+3. `003_create_property_idempotency_table.sql`
 
 ## 실행 전 확인
 
