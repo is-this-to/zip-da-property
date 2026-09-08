@@ -67,7 +67,7 @@ public class PropertyFile extends BaseAuditEntity {
 
     @Column(
             name = "checksum",
-            length = 128
+            length = 64
     )
     private String checksum;
 
@@ -116,5 +116,13 @@ public class PropertyFile extends BaseAuditEntity {
                 expiresAt,
                 actorContext
         );
+    }
+
+    public void complete(
+            String checksum,
+            ActorContext actorContext
+    ) {
+        this.checksum = checksum;
+        recordUpdate(actorContext);
     }
 }

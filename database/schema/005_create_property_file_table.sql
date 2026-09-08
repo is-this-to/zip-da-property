@@ -12,7 +12,7 @@ CREATE TABLE `property_file`
         COMMENT '요청된 파일 크기(byte)',
     `object_key`            VARCHAR(500) NOT NULL
         COMMENT 'MinIO 객체 키',
-    `checksum`              VARCHAR(128) NULL
+    `checksum`              VARCHAR(64)  NULL
         COMMENT '업로드 완료 검증 시 저장할 체크섬',
     `expires_at`            DATETIME(6)  NOT NULL
         COMMENT '업로드 세션 만료 시각',
