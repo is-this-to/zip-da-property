@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.image.service.PropertyImageLinkService;
 import com.zipdaproperty.domain.property.command.PropertyCreateCommand;
 import com.zipdaproperty.domain.property.constant.PropertyStatusType;
 import com.zipdaproperty.domain.property.constant.PublisherType;
@@ -87,6 +88,8 @@ public class PropertyCreateService {
 
     private final ObjectMapper objectMapper;
 
+    private final PropertyImageLinkService propertyImageLinkService;
+
     @Transactional
     public PropertyCreateResponse create(
             PropertyCreateCommand command,
@@ -116,6 +119,12 @@ public class PropertyCreateService {
 
         Property savedProperty =
                 propertyRepository.saveAndFlush(property);
+
+        propertyImageLinkService.linkImages(
+                savedProperty.getPropertyId(),
+                command.fileIds(),
+                actorContext
+        );
 
         Instant occurredAt = Instant.now();
 

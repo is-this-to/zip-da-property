@@ -5,6 +5,7 @@ import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublisherType;
 import com.zipdaproperty.domain.property.constant.TransactionType;
 import com.zipdaproperty.global.id.TsidString;
+import com.zipdaproperty.global.id.TsidLongDeserializer;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
@@ -12,9 +13,13 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
+import tools.jackson.databind.annotation.JsonDeserialize;
+import tools.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.ser.std.ToStringSerializer;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 public record PropertyCreateRequest(
 
@@ -116,7 +121,13 @@ public record PropertyCreateRequest(
         String title,
 
         @NotBlank(message = "매물 설명은 필수입니다.")
-        String description
+        String description,
+
+        @NotNull(message = "파일 ID 목록은 필수입니다.")
+        @Size(min = 1, max = 30, message = "매물 이미지는 1개 이상 30개 이하로 등록해야 합니다.")
+        @JsonDeserialize(contentUsing = TsidLongDeserializer.class)
+        @JsonSerialize(contentUsing = ToStringSerializer.class)
+        List<@NotNull Long> fileIds
 
 ) {
 
@@ -145,7 +156,8 @@ public record PropertyCreateRequest(
                 hasElevator,
                 isPetAllowed,
                 title,
-                description
+                description,
+                fileIds
         );
     }
 }
