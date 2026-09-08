@@ -74,6 +74,22 @@ public enum CustomResponseCode {
             HttpStatus.INTERNAL_SERVER_ERROR,
             "E40"
     ),
+    INVALID_FILE_TYPE(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "E41"
+    ),
+    FILE_TOO_LARGE(
+            HttpStatus.PAYLOAD_TOO_LARGE,
+            "E42"
+    ),
+    UPLOAD_SESSION_EXPIRED(
+            HttpStatus.GONE,
+            "E43"
+    ),
+    FILE_OWNERSHIP_REQUIRED(
+            HttpStatus.FORBIDDEN,
+            "E44"
+    ),
 
     // DB 관련
     DB_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "E80"),
