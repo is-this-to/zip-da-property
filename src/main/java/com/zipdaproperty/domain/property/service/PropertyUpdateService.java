@@ -1,0 +1,402 @@
+package com.zipdaproperty.domain.property.service;
+
+import com.zipdaproperty.domain.property.command.PropertyUpdateCommand;
+import com.zipdaproperty.domain.property.entity.Property;
+import com.zipdaproperty.domain.property.entity.PropertyRevision;
+import com.zipdaproperty.domain.property.repository.PropertyRepository;
+import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
+import com.zipdaproperty.domain.property.request.PropertyUpdateRequest;
+import com.zipdaproperty.domain.property.response.PropertyUpdateResponse;
+import com.zipdaproperty.domain.region.repository.RegionRepository;
+import com.zipdaproperty.global.context.ActorContext;
+import com.zipdaproperty.global.context.constant.ActorRole;
+import com.zipdaproperty.global.error.custom.BusinessException;
+import com.zipdaproperty.global.response.constant.CustomResponseCode;
+import lombok.RequiredArgsConstructor;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+
+@Service
+@RequiredArgsConstructor
+public class PropertyUpdateService {
+
+    private static final String UPDATE_REASON =
+            "매물 핵심 정보가 수정되었습니다.";
+
+    private final PropertyRepository propertyRepository;
+
+    private final PropertyRevisionRepository
+            propertyRevisionRepository;
+
+    private final RegionRepository regionRepository;
+
+    private final PropertyVersionPolicy propertyVersionPolicy;
+
+    private final PropertyUpdateCommandFactory
+            propertyUpdateCommandFactory;
+
+    private final PropertyUpdatePolicy propertyUpdatePolicy;
+
+    private final PropertyPricePolicy propertyPricePolicy;
+
+    private final ObjectMapper objectMapper;
+
+    @Transactional
+    public PropertyUpdateResponse update(
+            Long propertyId,
+            PropertyUpdateRequest request,
+            ActorContext actorContext
+    ) {
+        Property property = findProperty(propertyId);
+
+        validateUpdatePermission(
+                property,
+                actorContext
+        );
+
+        propertyVersionPolicy.validate(
+                property.getVersion(),
+                request.version()
+        );
+
+        PropertyUpdateCommand command =
+                propertyUpdateCommandFactory.create(
+                        property,
+                        request
+                );
+
+        propertyUpdatePolicy.validate(command);
+
+        validateRegion(command.regionId());
+
+        propertyPricePolicy.validate(
+                command.transactionType(),
+                command.salePrice(),
+                command.deposit(),
+                command.monthlyRent()
+        );
+
+        List<String> changedFields =
+                detectChangedFields(
+                        property,
+                        command,
+                        request.changes().keySet()
+                );
+
+        validateActualChanges(changedFields);
+
+        String beforeSnapshotJson =
+                objectMapper.writeValueAsString(property);
+
+        Instant occurredAt = Instant.now();
+
+        property.update(
+                command,
+                actorContext
+        );
+
+        Property savedProperty =
+                saveAndFlush(property);
+
+        String afterSnapshotJson =
+                objectMapper.writeValueAsString(savedProperty);
+
+        String changedFieldsJson =
+                objectMapper.writeValueAsString(changedFields);
+
+        PropertyRevision revision =
+                PropertyRevision.updated(
+                        savedProperty.getPropertyId(),
+                        savedProperty.getVersion(),
+                        changedFieldsJson,
+                        beforeSnapshotJson,
+                        afterSnapshotJson,
+                        UPDATE_REASON,
+                        actorContext,
+                        occurredAt
+                );
+
+        propertyRevisionRepository.save(revision);
+
+        return PropertyUpdateResponse.from(savedProperty);
+    }
+
+    private Property findProperty(Long propertyId) {
+        if (propertyId == null || propertyId <= 0) {
+            throw new BusinessException(
+                    CustomResponseCode.PROPERTY_NOT_FOUND,
+                    "매물을 찾을 수 없습니다."
+            );
+        }
+
+        return propertyRepository
+                .findByPropertyIdAndDeletedAtIsNull(propertyId)
+                .orElseThrow(
+                        () -> new BusinessException(
+                                CustomResponseCode.PROPERTY_NOT_FOUND,
+                                "매물을 찾을 수 없습니다. propertyId = "
+                                        + propertyId
+                        )
+                );
+    }
+
+    private void validateUpdatePermission(
+            Property property,
+            ActorContext actorContext
+    ) {
+        if (actorContext == null
+                || !actorContext.isMemberRequest()) {
+            throw new BusinessException(
+                    CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+                    "회원 요청만 매물을 수정할 수 있습니다."
+            );
+        }
+
+        ActorRole actorRole = actorContext.role();
+
+        boolean isOwner =
+                (
+                        actorRole == ActorRole.USER
+                                || actorRole == ActorRole.AGENT
+                )
+                        && Objects.equals(
+                        property.getAuthorMemberId(),
+                        actorContext.memberId()
+                );
+
+        boolean isAllowedAdmin =
+                actorRole == ActorRole.CS_ADMIN
+                        || actorRole == ActorRole.SUPER_ADMIN;
+
+        if (!isOwner && !isAllowedAdmin) {
+            throw new BusinessException(
+                    CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+                    "매물 작성자 또는 허용된 관리자만 수정할 수 있습니다."
+            );
+        }
+    }
+
+    private void validateRegion(Long regionId) {
+        regionRepository
+                .findByRegionIdAndIsActiveTrue(regionId)
+                .orElseThrow(
+                        () -> new BusinessException(
+                                CustomResponseCode.NOT_FOUND_RESOURCE,
+                                "활성 상태의 지역을 찾을 수 없습니다. "
+                                        + "regionId = "
+                                        + regionId
+                        )
+                );
+    }
+
+    private List<String> detectChangedFields(
+            Property property,
+            PropertyUpdateCommand command,
+            Set<String> requestedFields
+    ) {
+        return requestedFields
+                .stream()
+                .filter(
+                        fieldName -> isActuallyChanged(
+                                fieldName,
+                                property,
+                                command
+                        )
+                )
+                .sorted()
+                .toList();
+    }
+
+    private boolean isActuallyChanged(
+            String fieldName,
+            Property property,
+            PropertyUpdateCommand command
+    ) {
+        return switch (fieldName) {
+            case "regionId" ->
+                    !Objects.equals(
+                            property.getRegionId(),
+                            command.regionId()
+                    );
+
+            case "apartmentComplexId" ->
+                    !Objects.equals(
+                            property.getApartmentComplexId(),
+                            command.apartmentComplexId()
+                    );
+
+            case "propertyType" ->
+                    property.getPropertyType()
+                            != command.propertyType();
+
+            case "transactionType" ->
+                    property.getTransactionType()
+                            != command.transactionType();
+
+            case "salePrice" ->
+                    !Objects.equals(
+                            property.getSalePrice(),
+                            command.salePrice()
+                    );
+
+            case "deposit" ->
+                    !Objects.equals(
+                            property.getDeposit(),
+                            command.deposit()
+                    );
+
+            case "monthlyRent" ->
+                    !Objects.equals(
+                            property.getMonthlyRent(),
+                            command.monthlyRent()
+                    );
+
+            case "maintenanceFee" ->
+                    !Objects.equals(
+                            property.getMaintenanceFee(),
+                            command.maintenanceFee()
+                    );
+
+            case "supplyArea" ->
+                    isBigDecimalChanged(
+                            property.getSupplyArea(),
+                            command.supplyArea()
+                    );
+
+            case "exclusiveArea" ->
+                    isBigDecimalChanged(
+                            property.getExclusiveArea(),
+                            command.exclusiveArea()
+                    );
+
+            case "roomCount" ->
+                    !Objects.equals(
+                            property.getRoomCount(),
+                            command.roomCount()
+                    );
+
+            case "bathroomCount" ->
+                    !Objects.equals(
+                            property.getBathroomCount(),
+                            command.bathroomCount()
+                    );
+
+            case "floor" ->
+                    !Objects.equals(
+                            property.getFloor(),
+                            command.floor()
+                    );
+
+            case "totalFloor" ->
+                    !Objects.equals(
+                            property.getTotalFloor(),
+                            command.totalFloor()
+                    );
+
+            case "floorCondition" ->
+                    !Objects.equals(
+                            property.getFloorCondition(),
+                            command.floorCondition()
+                    );
+
+            case "direction" ->
+                    !Objects.equals(
+                            property.getDirection(),
+                            command.direction()
+                    );
+
+            case "approvalDate" ->
+                    !Objects.equals(
+                            property.getApprovalDate(),
+                            command.approvalDate()
+                    );
+
+            case "buildingUse" ->
+                    !Objects.equals(
+                            property.getBuildingUse(),
+                            command.buildingUse()
+                    );
+
+            case "isParkingAvailable" ->
+                    !Objects.equals(
+                            property.getIsParkingAvailable(),
+                            command.isParkingAvailable()
+                    );
+
+            case "hasElevator" ->
+                    !Objects.equals(
+                            property.getHasElevator(),
+                            command.hasElevator()
+                    );
+
+            case "isPetAllowed" ->
+                    !Objects.equals(
+                            property.getIsPetAllowed(),
+                            command.isPetAllowed()
+                    );
+
+            case "title" ->
+                    !Objects.equals(
+                            property.getTitle(),
+                            command.title()
+                    );
+
+            case "description" ->
+                    !Objects.equals(
+                            property.getDescription(),
+                            command.description()
+                    );
+
+            default -> false;
+        };
+    }
+
+    private boolean isBigDecimalChanged(
+            BigDecimal currentValue,
+            BigDecimal requestedValue
+    ) {
+        if (currentValue == null
+                && requestedValue == null) {
+            return false;
+        }
+
+        if (currentValue == null
+                || requestedValue == null) {
+            return true;
+        }
+
+        return currentValue.compareTo(requestedValue) != 0;
+    }
+
+    private void validateActualChanges(
+            List<String> changedFields
+    ) {
+        if (changedFields.isEmpty()) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_REQUEST,
+                    "실제로 변경된 필드가 없습니다."
+            );
+        }
+    }
+
+    private Property saveAndFlush(Property property) {
+        try {
+            return propertyRepository.saveAndFlush(property);
+        } catch (
+                OptimisticLockingFailureException exception
+        ) {
+            throw new BusinessException(
+                    CustomResponseCode.VERSION_CONFLICT,
+                    "다른 사용자가 먼저 매물을 수정했습니다."
+            );
+        }
+    }
+}

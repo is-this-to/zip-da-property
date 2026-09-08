@@ -1,6 +1,7 @@
 package com.zipdaproperty.domain.property.entity;
 
 import com.zipdaproperty.domain.property.command.PropertyCreateCommand;
+import com.zipdaproperty.domain.property.command.PropertyUpdateCommand;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.constant.PublisherType;
@@ -252,5 +253,36 @@ public class Property extends BaseAuditEntity {
                 command,
                 actorContext
         );
+    }
+
+    public void update(
+            PropertyUpdateCommand command,
+            ActorContext actorContext
+    ) {
+        this.regionId = command.regionId();
+        this.apartmentComplexId = command.apartmentComplexId();
+        this.propertyType = command.propertyType();
+        this.transactionType = command.transactionType();
+        this.salePrice = command.salePrice();
+        this.deposit = command.deposit();
+        this.monthlyRent = command.monthlyRent();
+        this.maintenanceFee = command.maintenanceFee();
+        this.supplyArea = command.supplyArea();
+        this.exclusiveArea = command.exclusiveArea();
+        this.roomCount = command.roomCount();
+        this.bathroomCount = command.bathroomCount();
+        this.floor = command.floor();
+        this.totalFloor = command.totalFloor();
+        this.floorCondition = command.floorCondition();
+        this.direction = command.direction();
+        this.approvalDate = command.approvalDate();
+        this.buildingUse = command.buildingUse();
+        this.isParkingAvailable = command.isParkingAvailable();
+        this.hasElevator = command.hasElevator();
+        this.isPetAllowed = command.isPetAllowed();
+        this.title = command.title();
+        this.description = command.description();
+
+        recordUpdate(actorContext);
     }
 }
