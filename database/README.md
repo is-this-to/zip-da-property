@@ -51,5 +51,3 @@ Service 및 Repository 계층에서 검증합니다. 참조 대상의 삭제·�
 - 옵션 원장 코드 UNIQUE와 revision·옵션 행 조합의 이력 UNIQUE는 유지합니다.
 - 이 정책은 옵션 영역에만 적용하며 001 및 다른 도메인의 값 저장 구조를 변경하지 않습니다.
 - 수정된 003은 팀 SQL 통합 후 적용할 생성 DDL입니다. 기존 테이블에 그대로 재실행하지 않습니다.
-- 기존 로컬 테이블은 `database/manual/001_check_property_option_boolean_values.sql`로 먼저 확인하고,
-  결과를 검토한 뒤 `002_migrate_property_option_boolean_values.sql`을 HeidiSQL에서 단계별로 적용합니다.
