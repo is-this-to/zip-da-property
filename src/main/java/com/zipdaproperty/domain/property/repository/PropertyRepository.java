@@ -5,14 +5,20 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;
 
-public interface PropertyRepository extends JpaRepository<Property, Long> {
+public interface PropertyRepository
+        extends JpaRepository<Property, Long> {
 
     Optional<Property> findByPropertyIdAndDeletedAtIsNull(
             Long propertyId
     );
 
-    Optional<Property> findByPropertyIdAndAuthorMemberIdAndDeletedAtIsNull(
+    Optional<Property>
+    findByPropertyIdAndAuthorMemberIdAndDeletedAtIsNull(
             Long propertyId,
             Long authorMemberId
+    );
+
+    Optional<Property> findByPropertyIdAndDeletedAtIsNotNull(
+            Long propertyId
     );
 }

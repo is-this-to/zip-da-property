@@ -293,4 +293,22 @@ public class Property extends BaseAuditEntity {
         this.transactionStatus = targetStatus;
         recordUpdate(actorContext);
     }
+
+    public void softDelete(
+            ActorContext actorContext,
+            Instant deletedAt,
+            String deleteReason
+    ) {
+        recordDeletion(
+                actorContext,
+                deletedAt,
+                deleteReason
+        );
+    }
+
+    public void restore(
+            ActorContext actorContext
+    ) {
+        recordRestoration(actorContext);
+    }
 }
