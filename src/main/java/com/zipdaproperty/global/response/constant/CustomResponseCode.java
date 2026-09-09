@@ -91,6 +91,12 @@ public enum CustomResponseCode {
             "E44"
     ),
 
+    // 외부 API 연동 관련
+    KAKAO_LOCAL_API_ERROR(
+            HttpStatus.BAD_GATEWAY,
+            "E50"
+    ),
+
     // DB 관련
     DB_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "E80"),
     DB_DUPLICATED_KEY_ERROR(HttpStatus.CONFLICT, "E81"),
