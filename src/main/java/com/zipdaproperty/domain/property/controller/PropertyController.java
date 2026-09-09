@@ -2,9 +2,12 @@ package com.zipdaproperty.domain.property.controller;
 
 import com.zipdaproperty.domain.property.idempotency.service.PropertyIdempotencyService;
 import com.zipdaproperty.domain.property.request.PropertyCreateRequest;
+import com.zipdaproperty.domain.property.request.PropertyTransactionStatusChangeRequest;
 import com.zipdaproperty.domain.property.request.PropertyUpdateRequest;
 import com.zipdaproperty.domain.property.response.PropertyCreateResponse;
+import com.zipdaproperty.domain.property.response.PropertyTransactionStatusChangeResponse;
 import com.zipdaproperty.domain.property.response.PropertyUpdateResponse;
+import com.zipdaproperty.domain.property.service.PropertyTransactionStatusChangeService;
 import com.zipdaproperty.domain.property.service.PropertyUpdateService;
 import com.zipdaproperty.global.config.openapi.CustomApiResponse;
 import com.zipdaproperty.global.context.ActorContext;
@@ -42,6 +45,9 @@ public class PropertyController {
             propertyIdempotencyService;
 
     private final PropertyUpdateService propertyUpdateService;
+
+    private final PropertyTransactionStatusChangeService
+            propertyTransactionStatusChangeService;
 
     @Operation(
             summary = "매물 등록",
@@ -170,6 +176,90 @@ public class PropertyController {
 
         PropertyUpdateResponse response =
                 propertyUpdateService.update(
+                        propertyId,
+                        request,
+                        actorContext
+                );
+
+        return ResponseEntity.ok(
+                GlobalResponseDTO.success(response)
+        );
+    }
+
+    @Operation(
+            summary = "매물 거래 상태 변경",
+            description = """
+                    매물 작성자 또는 허용된 관리자가
+                    매물의 거래 상태를 변경합니다.
+                    If-Match 헤더와 요청 본문의 version은
+                    반드시 동일해야 합니다.
+                    AVAILABLE, RESERVED, COMPLETED 사이의
+                    허용된 상태 전이만 처리합니다.
+                    상태 변경 결과는 전체 revision과
+                    상태 전용 history에 함께 기록합니다.
+                    """
+    )
+    @CustomApiResponse({
+            CustomResponseCode.UNAUTHENTICATED,
+            CustomResponseCode.FORBIDDEN,
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.INVALID_STATUS_TRANSITION,
+            CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.PROPERTY_NOT_FOUND,
+            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+            CustomResponseCode.DB_ERROR,
+            CustomResponseCode.SYSTEM_ERROR
+    })
+    @PreAuthorize(
+            "hasAnyRole("
+                    + "'USER', "
+                    + "'AGENT', "
+                    + "'CS_ADMIN', "
+                    + "'SUPER_ADMIN'"
+                    + ")"
+    )
+    @PatchMapping("/{propertyId}/transaction-status")
+    public ResponseEntity<
+            GlobalResponseDTO<
+                    PropertyTransactionStatusChangeResponse
+                    >
+            >
+    changeTransactionStatus(
+            @Parameter(
+                    description = "거래 상태를 변경할 매물 ID",
+                    required = true,
+                    example = "884685586571263701"
+            )
+            @PathVariable
+            Long propertyId,
+
+            @Parameter(
+                    description = "마지막으로 조회한 매물 version",
+                    required = true,
+                    example = "\"1\""
+            )
+            @RequestHeader(
+                    name = "If-Match",
+                    required = false
+            )
+            String ifMatch,
+
+            @Valid
+            @RequestBody
+            PropertyTransactionStatusChangeRequest request,
+
+            @Parameter(hidden = true)
+            ActorContext actorContext
+    ) {
+        Long ifMatchVersion = parseIfMatch(ifMatch);
+
+        validateVersionAgreement(
+                ifMatchVersion,
+                request.version()
+        );
+
+        PropertyTransactionStatusChangeResponse response =
+                propertyTransactionStatusChangeService.change(
                         propertyId,
                         request,
                         actorContext

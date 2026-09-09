@@ -168,6 +168,7 @@ public class PropertyRevision extends BaseAuditEntity {
     private PropertyRevision(
             Long propertyId,
             Long propertyVersion,
+            RevisionChangeScope changeScope,
             String changedFieldsJson,
             String beforeSnapshotJson,
             String afterSnapshotJson,
@@ -179,7 +180,7 @@ public class PropertyRevision extends BaseAuditEntity {
         this.propertyId = propertyId;
         this.propertyVersion = propertyVersion;
         this.changeType = RevisionChangeType.UPDATE;
-        this.changeScope = RevisionChangeScope.PROPERTY;
+        this.changeScope = changeScope;
         this.changedFieldsJson = changedFieldsJson;
         this.beforeSnapshotJson = beforeSnapshotJson;
         this.afterSnapshotJson = afterSnapshotJson;
@@ -223,6 +224,30 @@ public class PropertyRevision extends BaseAuditEntity {
         return new PropertyRevision(
                 propertyId,
                 propertyVersion,
+                RevisionChangeScope.PROPERTY,
+                changedFieldsJson,
+                beforeSnapshotJson,
+                afterSnapshotJson,
+                changeReason,
+                actorContext,
+                occurredAt
+        );
+    }
+
+    public static PropertyRevision statusChanged(
+            Long propertyId,
+            Long propertyVersion,
+            String changedFieldsJson,
+            String beforeSnapshotJson,
+            String afterSnapshotJson,
+            String changeReason,
+            ActorContext actorContext,
+            Instant occurredAt
+    ) {
+        return new PropertyRevision(
+                propertyId,
+                propertyVersion,
+                RevisionChangeScope.STATUS,
                 changedFieldsJson,
                 beforeSnapshotJson,
                 afterSnapshotJson,
