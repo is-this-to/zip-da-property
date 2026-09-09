@@ -55,6 +55,12 @@ public enum CustomResponseCode {
             "P17"
     ),
 
+    // 매물 복구 관련
+    RESTORE_REFERENCE_INVALID(
+            HttpStatus.CONFLICT,
+            "P18"
+    ),
+
     // Property 멱등 요청 관련
     IDEMPOTENCY_KEY_REQUIRED(
             HttpStatus.BAD_REQUEST,
