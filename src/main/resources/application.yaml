@@ -86,3 +86,12 @@ minio:
     "image/gif",
     "image/webp"
   ]
+
+# Kakao Local REST API 설정
+external-api:
+  kakao-local:
+    base-url: ${KAKAO_LOCAL_BASE_URL:https://dapi.kakao.com}
+    rest-api-key: ${KAKAO_LOCAL_REST_API_KEY}
+    connect-timeout: ${KAKAO_LOCAL_CONNECT_TIMEOUT:3s}
+    read-timeout: ${KAKAO_LOCAL_READ_TIMEOUT:5s}
+    page-size: ${KAKAO_LOCAL_PAGE_SIZE:10}
