@@ -90,6 +90,10 @@ public enum CustomResponseCode {
             HttpStatus.UNPROCESSABLE_CONTENT,
             "P24"
     ),
+    PROPERTY_PUBLIC_LOCATION_GENERATION_FAILED(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P25"
+    ),
 
     // 파일 처리 관련
     FILE_MANAGED_ERROR(
