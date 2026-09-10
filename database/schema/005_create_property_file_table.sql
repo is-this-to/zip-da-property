@@ -6,16 +6,26 @@ CREATE TABLE `property_file`
         COMMENT '업로드 요청 단위 세션 식별자',
     `owner_member_id`       BIGINT       NOT NULL
         COMMENT '파일 소유 회원 ID',
+    `file_purpose`          VARCHAR(30)  NOT NULL
+        COMMENT '파일 사용 용도',
+    `upload_status`         VARCHAR(30)  NOT NULL
+        COMMENT '파일 업로드 상태',
     `original_file_name`    VARCHAR(255) NOT NULL
         COMMENT '경로 정보가 제거된 원본 파일명',
     `file_size`             BIGINT       NOT NULL
         COMMENT '요청된 파일 크기(byte)',
+    `mime_type`             VARCHAR(100) NULL
+        COMMENT '업로드 완료 검증된 MIME 타입',
     `object_key`            VARCHAR(500) NOT NULL
         COMMENT 'MinIO 객체 키',
     `checksum`              VARCHAR(64)  NULL
         COMMENT '업로드 완료 검증 시 저장할 체크섬',
     `expires_at`            DATETIME(6)  NOT NULL
         COMMENT '업로드 세션 만료 시각',
+    `linked_at`             DATETIME(6)  NULL
+        COMMENT '업무 데이터 연결 시각',
+    `object_deleted_at`     DATETIME(6)  NULL
+        COMMENT '스토리지 객체 삭제 시각',
     `created_at`            DATETIME(6)  NOT NULL,
     `created_by_member_id`  BIGINT       NULL,
     `created_by_role`       VARCHAR(30)  NULL,
@@ -35,6 +45,27 @@ CREATE TABLE `property_file`
 
     CONSTRAINT `chk_property_file_size`
         CHECK (`file_size` > 0),
+
+    CONSTRAINT `chk_property_file_purpose_enum`
+        CHECK (
+            `file_purpose` IN (
+                               'PROPERTY_IMAGE',
+                               'VERIFICATION',
+                               'REPORT_EVIDENCE'
+                )
+            ),
+
+    CONSTRAINT `chk_property_file_upload_status_enum`
+        CHECK (
+            `upload_status` IN (
+                                'CREATED',
+                                'UPLOADED',
+                                'VERIFIED',
+                                'LINKED',
+                                'EXPIRED',
+                                'FAILED'
+                )
+            ),
 
     CONSTRAINT `chk_property_file_expires_at`
         CHECK (`expires_at` >= `created_at`),

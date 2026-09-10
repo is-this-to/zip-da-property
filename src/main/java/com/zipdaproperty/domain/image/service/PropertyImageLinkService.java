@@ -1,7 +1,7 @@
 package com.zipdaproperty.domain.image.service;
 
 import com.zipdaproperty.domain.file.entity.PropertyFile;
-import com.zipdaproperty.domain.file.exception.FileOwnershipRequiredException;
+import com.zipdaproperty.global.error.custom.business.FileOwnershipRequiredException;
 import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
 import com.zipdaproperty.domain.image.entity.PropertyImage;
 import com.zipdaproperty.domain.image.repository.PropertyImageRepository;

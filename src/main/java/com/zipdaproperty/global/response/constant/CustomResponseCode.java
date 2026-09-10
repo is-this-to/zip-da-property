@@ -55,6 +55,18 @@ public enum CustomResponseCode {
             "P17"
     ),
 
+    // 매물 복구 관련
+    RESTORE_REFERENCE_INVALID(
+            HttpStatus.CONFLICT,
+            "P18"
+    ),
+
+    // 매물 위치 검증 관련
+    PROPERTY_REGION_NOT_FOUND(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P19"
+    ),
+
     // Property 멱등 요청 관련
     IDEMPOTENCY_KEY_REQUIRED(
             HttpStatus.BAD_REQUEST,
@@ -67,6 +79,20 @@ public enum CustomResponseCode {
     IDEMPOTENCY_REQUEST_IN_PROGRESS(
             HttpStatus.CONFLICT,
             "P22"
+    ),
+
+    // 매물 위치 검증 관련
+    PROPERTY_REGION_BOUNDARY_NOT_FOUND(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P23"
+    ),
+    PROPERTY_LOCATION_REGION_MISMATCH(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P24"
+    ),
+    PROPERTY_PUBLIC_LOCATION_GENERATION_FAILED(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P25"
     ),
 
     // 파일 처리 관련
@@ -89,6 +115,12 @@ public enum CustomResponseCode {
     FILE_OWNERSHIP_REQUIRED(
             HttpStatus.FORBIDDEN,
             "E44"
+    ),
+
+    // 외부 API 연동 관련
+    KAKAO_LOCAL_API_ERROR(
+            HttpStatus.BAD_GATEWAY,
+            "E50"
     ),
 
     // DB 관련

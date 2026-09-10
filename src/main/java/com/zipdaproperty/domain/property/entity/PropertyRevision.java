@@ -168,6 +168,8 @@ public class PropertyRevision extends BaseAuditEntity {
     private PropertyRevision(
             Long propertyId,
             Long propertyVersion,
+            RevisionChangeType changeType,
+            RevisionChangeScope changeScope,
             String changedFieldsJson,
             String beforeSnapshotJson,
             String afterSnapshotJson,
@@ -178,8 +180,8 @@ public class PropertyRevision extends BaseAuditEntity {
         super(actorContext);
         this.propertyId = propertyId;
         this.propertyVersion = propertyVersion;
-        this.changeType = RevisionChangeType.UPDATE;
-        this.changeScope = RevisionChangeScope.PROPERTY;
+        this.changeType = changeType;
+        this.changeScope = changeScope;
         this.changedFieldsJson = changedFieldsJson;
         this.beforeSnapshotJson = beforeSnapshotJson;
         this.afterSnapshotJson = afterSnapshotJson;
@@ -223,6 +225,80 @@ public class PropertyRevision extends BaseAuditEntity {
         return new PropertyRevision(
                 propertyId,
                 propertyVersion,
+                RevisionChangeType.UPDATE,
+                RevisionChangeScope.PROPERTY,
+                changedFieldsJson,
+                beforeSnapshotJson,
+                afterSnapshotJson,
+                changeReason,
+                actorContext,
+                occurredAt
+        );
+    }
+
+    public static PropertyRevision statusChanged(
+            Long propertyId,
+            Long propertyVersion,
+            String changedFieldsJson,
+            String beforeSnapshotJson,
+            String afterSnapshotJson,
+            String changeReason,
+            ActorContext actorContext,
+            Instant occurredAt
+    ) {
+        return new PropertyRevision(
+                propertyId,
+                propertyVersion,
+                RevisionChangeType.UPDATE,
+                RevisionChangeScope.STATUS,
+                changedFieldsJson,
+                beforeSnapshotJson,
+                afterSnapshotJson,
+                changeReason,
+                actorContext,
+                occurredAt
+        );
+    }
+
+    public static PropertyRevision softDeleted(
+            Long propertyId,
+            Long propertyVersion,
+            String changedFieldsJson,
+            String beforeSnapshotJson,
+            String afterSnapshotJson,
+            String changeReason,
+            ActorContext actorContext,
+            Instant occurredAt
+    ) {
+        return new PropertyRevision(
+                propertyId,
+                propertyVersion,
+                RevisionChangeType.SOFT_DELETE,
+                RevisionChangeScope.PROPERTY,
+                changedFieldsJson,
+                beforeSnapshotJson,
+                afterSnapshotJson,
+                changeReason,
+                actorContext,
+                occurredAt
+        );
+    }
+
+    public static PropertyRevision restored(
+            Long propertyId,
+            Long propertyVersion,
+            String changedFieldsJson,
+            String beforeSnapshotJson,
+            String afterSnapshotJson,
+            String changeReason,
+            ActorContext actorContext,
+            Instant occurredAt
+    ) {
+        return new PropertyRevision(
+                propertyId,
+                propertyVersion,
+                RevisionChangeType.RESTORE,
+                RevisionChangeScope.PROPERTY,
                 changedFieldsJson,
                 beforeSnapshotJson,
                 afterSnapshotJson,

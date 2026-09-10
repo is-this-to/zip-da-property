@@ -285,4 +285,30 @@ public class Property extends BaseAuditEntity {
 
         recordUpdate(actorContext);
     }
+
+    public void changeTransactionStatus(
+            TransactionStatus targetStatus,
+            ActorContext actorContext
+    ) {
+        this.transactionStatus = targetStatus;
+        recordUpdate(actorContext);
+    }
+
+    public void softDelete(
+            ActorContext actorContext,
+            Instant deletedAt,
+            String deleteReason
+    ) {
+        recordDeletion(
+                actorContext,
+                deletedAt,
+                deleteReason
+        );
+    }
+
+    public void restore(
+            ActorContext actorContext
+    ) {
+        recordRestoration(actorContext);
+    }
 }

@@ -2,9 +2,17 @@ package com.zipdaproperty.domain.property.controller;
 
 import com.zipdaproperty.domain.property.idempotency.service.PropertyIdempotencyService;
 import com.zipdaproperty.domain.property.request.PropertyCreateRequest;
+import com.zipdaproperty.domain.property.request.PropertyDeleteRequest;
+import com.zipdaproperty.domain.property.request.PropertyRestoreRequest;
+import com.zipdaproperty.domain.property.request.PropertyTransactionStatusChangeRequest;
 import com.zipdaproperty.domain.property.request.PropertyUpdateRequest;
 import com.zipdaproperty.domain.property.response.PropertyCreateResponse;
+import com.zipdaproperty.domain.property.response.PropertyRestoreResponse;
+import com.zipdaproperty.domain.property.response.PropertyTransactionStatusChangeResponse;
 import com.zipdaproperty.domain.property.response.PropertyUpdateResponse;
+import com.zipdaproperty.domain.property.service.PropertyDeleteService;
+import com.zipdaproperty.domain.property.service.PropertyRestoreService;
+import com.zipdaproperty.domain.property.service.PropertyTransactionStatusChangeService;
 import com.zipdaproperty.domain.property.service.PropertyUpdateService;
 import com.zipdaproperty.global.config.openapi.CustomApiResponse;
 import com.zipdaproperty.global.context.ActorContext;
@@ -19,6 +27,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,7 +40,7 @@ import java.util.Objects;
 
 @Tag(
         name = "Property API",
-        description = "매물 등록·수정·상태 변경 API"
+        description = "매물 등록·수정·상태 변경·삭제·복구 API"
 )
 @RestController
 @RequiredArgsConstructor
@@ -42,6 +51,13 @@ public class PropertyController {
             propertyIdempotencyService;
 
     private final PropertyUpdateService propertyUpdateService;
+
+    private final PropertyTransactionStatusChangeService
+            propertyTransactionStatusChangeService;
+
+    private final PropertyDeleteService propertyDeleteService;
+
+    private final PropertyRestoreService propertyRestoreService;
 
     @Operation(
             summary = "매물 등록",
@@ -170,6 +186,244 @@ public class PropertyController {
 
         PropertyUpdateResponse response =
                 propertyUpdateService.update(
+                        propertyId,
+                        request,
+                        actorContext
+                );
+
+        return ResponseEntity.ok(
+                GlobalResponseDTO.success(response)
+        );
+    }
+
+    @Operation(
+            summary = "매물 거래 상태 변경",
+            description = """
+                    매물 작성자 또는 허용된 관리자가
+                    매물의 거래 상태를 변경합니다.
+                    If-Match 헤더와 요청 본문의 version은
+                    반드시 동일해야 합니다.
+                    AVAILABLE, RESERVED, COMPLETED 사이의
+                    허용된 상태 전이만 처리합니다.
+                    상태 변경 결과는 전체 revision과
+                    상태 전용 history에 함께 기록합니다.
+                    """
+    )
+    @CustomApiResponse({
+            CustomResponseCode.UNAUTHENTICATED,
+            CustomResponseCode.FORBIDDEN,
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.INVALID_STATUS_TRANSITION,
+            CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.PROPERTY_NOT_FOUND,
+            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+            CustomResponseCode.DB_ERROR,
+            CustomResponseCode.SYSTEM_ERROR
+    })
+    @PreAuthorize(
+            "hasAnyRole("
+                    + "'USER', "
+                    + "'AGENT', "
+                    + "'CS_ADMIN', "
+                    + "'SUPER_ADMIN'"
+                    + ")"
+    )
+    @PatchMapping("/{propertyId}/transaction-status")
+    public ResponseEntity<
+            GlobalResponseDTO<
+                    PropertyTransactionStatusChangeResponse
+                    >
+            >
+    changeTransactionStatus(
+            @Parameter(
+                    description = "거래 상태를 변경할 매물 ID",
+                    required = true,
+                    example = "884685586571263701"
+            )
+            @PathVariable
+            Long propertyId,
+
+            @Parameter(
+                    description = "마지막으로 조회한 매물 version",
+                    required = true,
+                    example = "\"1\""
+            )
+            @RequestHeader(
+                    name = "If-Match",
+                    required = false
+            )
+            String ifMatch,
+
+            @Valid
+            @RequestBody
+            PropertyTransactionStatusChangeRequest request,
+
+            @Parameter(hidden = true)
+            ActorContext actorContext
+    ) {
+        Long ifMatchVersion = parseIfMatch(ifMatch);
+
+        validateVersionAgreement(
+                ifMatchVersion,
+                request.version()
+        );
+
+        PropertyTransactionStatusChangeResponse response =
+                propertyTransactionStatusChangeService.change(
+                        propertyId,
+                        request,
+                        actorContext
+                );
+
+        return ResponseEntity.ok(
+                GlobalResponseDTO.success(response)
+        );
+    }
+
+    @Operation(
+            summary = "매물 소프트 삭제",
+            description = """
+                    매물 작성자 또는 허용된 관리자가
+                    활성 상태의 매물을 소프트 삭제합니다.
+                    실제 DB 행을 제거하지 않고 deletedAt,
+                    deletedByMemberId, deletedByRole,
+                    deleteReason을 기록합니다.
+                    If-Match 헤더와 요청 본문의 version은
+                    반드시 동일해야 합니다.
+                    삭제에 성공하면 응답 본문 없이
+                    204 No Content를 반환합니다.
+                    """
+    )
+    @CustomApiResponse({
+            CustomResponseCode.UNAUTHENTICATED,
+            CustomResponseCode.FORBIDDEN,
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.PROPERTY_NOT_FOUND,
+            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+            CustomResponseCode.DB_ERROR,
+            CustomResponseCode.SYSTEM_ERROR
+    })
+    @PreAuthorize(
+            "hasAnyRole("
+                    + "'USER', "
+                    + "'AGENT', "
+                    + "'CS_ADMIN', "
+                    + "'SUPER_ADMIN'"
+                    + ")"
+    )
+    @DeleteMapping("/{propertyId}")
+    public ResponseEntity<Void>
+    deleteProperty(
+            @Parameter(
+                    description = "삭제할 매물 ID",
+                    required = true,
+                    example = "884685586571263701"
+            )
+            @PathVariable
+            Long propertyId,
+
+            @Parameter(
+                    description = "마지막으로 조회한 매물 version",
+                    required = true,
+                    example = "\"2\""
+            )
+            @RequestHeader(
+                    name = "If-Match",
+                    required = false
+            )
+            String ifMatch,
+
+            @Valid
+            @RequestBody
+            PropertyDeleteRequest request,
+
+            @Parameter(hidden = true)
+            ActorContext actorContext
+    ) {
+        Long ifMatchVersion = parseIfMatch(ifMatch);
+
+        validateVersionAgreement(
+                ifMatchVersion,
+                request.version()
+        );
+
+        propertyDeleteService.delete(
+                propertyId,
+                request,
+                actorContext
+        );
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(
+            summary = "삭제된 매물 복구",
+            description = """
+                    CS 관리자 또는 최고 관리자가
+                    소프트 삭제된 매물을 복구합니다.
+                    복구하기 전에 매물이 참조하는 Region이
+                    현재 활성 상태인지 논리적으로 검증합니다.
+                    If-Match 헤더와 요청 본문의 version은
+                    반드시 동일해야 합니다.
+                    """
+    )
+    @CustomApiResponse({
+            CustomResponseCode.UNAUTHENTICATED,
+            CustomResponseCode.FORBIDDEN,
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.PROPERTY_NOT_FOUND,
+            CustomResponseCode.RESTORE_REFERENCE_INVALID,
+            CustomResponseCode.DB_ERROR,
+            CustomResponseCode.SYSTEM_ERROR
+    })
+    @PreAuthorize(
+            "hasAnyRole("
+                    + "'CS_ADMIN', "
+                    + "'SUPER_ADMIN'"
+                    + ")"
+    )
+    @PostMapping("/{propertyId}/restore")
+    public ResponseEntity<
+            GlobalResponseDTO<PropertyRestoreResponse>
+            >
+    restoreProperty(
+            @Parameter(
+                    description = "복구할 매물 ID",
+                    required = true,
+                    example = "884685586571263701"
+            )
+            @PathVariable
+            Long propertyId,
+
+            @Parameter(
+                    description = "삭제된 매물의 현재 version",
+                    required = true,
+                    example = "\"3\""
+            )
+            @RequestHeader(
+                    name = "If-Match",
+                    required = false
+            )
+            String ifMatch,
+
+            @Valid
+            @RequestBody
+            PropertyRestoreRequest request,
+
+            @Parameter(hidden = true)
+            ActorContext actorContext
+    ) {
+        Long ifMatchVersion = parseIfMatch(ifMatch);
+
+        validateVersionAgreement(
+                ifMatchVersion,
+                request.version()
+        );
+
+        PropertyRestoreResponse response =
+                propertyRestoreService.restore(
                         propertyId,
                         request,
                         actorContext

@@ -1,11 +1,9 @@
 package com.zipdaproperty.domain.file.service;
 
+import com.zipdaproperty.domain.file.config.MinioImageProperties;
+import com.zipdaproperty.domain.file.constant.FileUploadPolicy;
 import com.zipdaproperty.domain.file.constant.ImageFileType;
 import com.zipdaproperty.domain.file.entity.PropertyFile;
-import com.zipdaproperty.domain.file.exception.FileOwnershipRequiredException;
-import com.zipdaproperty.domain.file.exception.FileTooLargeException;
-import com.zipdaproperty.domain.file.exception.InvalidFileTypeException;
-import com.zipdaproperty.domain.file.exception.UploadSessionExpiredException;
 import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
 import com.zipdaproperty.domain.file.request.PropertyFileCompleteRequest;
 import com.zipdaproperty.domain.file.response.PropertyFileCompleteResponse;
@@ -13,7 +11,11 @@ import com.zipdaproperty.domain.file.storage.MinioObjectVerification;
 import com.zipdaproperty.domain.file.storage.MinioObjectVerifier;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.error.custom.BusinessException;
+import com.zipdaproperty.global.error.custom.business.FileOwnershipRequiredException;
+import com.zipdaproperty.global.error.custom.business.FileTooLargeException;
+import com.zipdaproperty.global.error.custom.business.InvalidFileTypeException;
 import com.zipdaproperty.global.error.custom.business.NotFoundResourceException;
+import com.zipdaproperty.global.error.custom.business.UploadSessionExpiredException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -32,6 +34,7 @@ public class PropertyFileCompleteService {
 
     private final PropertyFileRepository propertyFileRepository;
     private final MinioObjectVerifier minioObjectVerifier;
+    private final MinioImageProperties minioImageProperties;
 
     @Transactional
     public PropertyFileCompleteResponse complete(
@@ -46,16 +49,24 @@ public class PropertyFileCompleteService {
                 ));
 
         validateOwnership(propertyFile, actorContext);
-        validateExpiration(propertyFile);
-
         String normalizedChecksum = validateAndNormalizeChecksum(request);
         validateDeclaredSize(request.size(), propertyFile.getFileSize());
+
+        if (propertyFile.isVerificationCompleted()) {
+            validateCompletedChecksum(
+                    normalizedChecksum,
+                    propertyFile.getChecksum()
+            );
+            return new PropertyFileCompleteResponse();
+        }
+
+        validateExpiration(propertyFile);
 
         MinioObjectVerification verification =
                 minioObjectVerifier.verify(propertyFile.getObjectKey());
 
         validateActualSize(verification.size(), request.size());
-        validateImageFileType(
+        String mimeType = validateImageFileType(
                 propertyFile.getOriginalFileName(),
                 verification.imageFileType()
         );
@@ -64,7 +75,11 @@ public class PropertyFileCompleteService {
                 verification.checksum()
         );
 
-        propertyFile.complete(normalizedChecksum, actorContext);
+        propertyFile.complete(
+                normalizedChecksum,
+                mimeType,
+                actorContext
+        );
         propertyFileRepository.save(propertyFile);
 
         return new PropertyFileCompleteResponse();
@@ -109,7 +124,7 @@ public class PropertyFileCompleteService {
         if (requestSize == null || requestSize <= 0) {
             throw invalidRequest("파일 크기는 0보다 커야 합니다.");
         }
-        if (requestSize > UploadSessionService.MAX_FILE_SIZE_BYTES) {
+        if (requestSize > FileUploadPolicy.MAX_FILE_SIZE_BYTES) {
             throw new FileTooLargeException(
                     "파일 크기는 20MB 이하여야 합니다."
             );
@@ -125,11 +140,6 @@ public class PropertyFileCompleteService {
             long actualSize,
             long requestSize
     ) {
-        if (actualSize > UploadSessionService.MAX_FILE_SIZE_BYTES) {
-            throw new FileTooLargeException(
-                    "업로드된 파일 크기는 20MB 이하여야 합니다."
-            );
-        }
         if (actualSize != requestSize) {
             throw invalidRequest(
                     "업로드된 파일 크기가 요청값과 일치하지 않습니다."
@@ -137,31 +147,38 @@ public class PropertyFileCompleteService {
         }
     }
 
-    private void validateImageFileType(
+    private String validateImageFileType(
             String originalFileName,
             ImageFileType actualImageFileType
     ) {
-        ImageFileType expectedImageFileType = expectedImageFileType(
-                originalFileName
-        );
+        String extension = extractExtension(originalFileName);
+        ImageFileType expectedImageFileType = expectedImageFileType(extension);
         if (expectedImageFileType == ImageFileType.UNKNOWN
                 || expectedImageFileType != actualImageFileType) {
             throw new InvalidFileTypeException(
                     "파일 확장자와 실제 이미지 형식이 일치하지 않습니다."
             );
         }
+        return minioImageProperties.findMimeTypeForFileExtension(extension)
+                .orElseThrow(() -> new InvalidFileTypeException(
+                        "허용되지 않는 파일 형식입니다."
+                ));
     }
 
-    private ImageFileType expectedImageFileType(String originalFileName) {
+    private String extractExtension(String originalFileName) {
         int separator = originalFileName.lastIndexOf('.');
         if (separator < 0 || separator == originalFileName.length() - 1) {
-            return ImageFileType.UNKNOWN;
+            return "";
         }
+        return originalFileName.substring(separator + 1)
+                .toLowerCase(Locale.ROOT);
+    }
 
-        return switch (originalFileName.substring(separator + 1)
-                .toLowerCase(Locale.ROOT)) {
+    private ImageFileType expectedImageFileType(String extension) {
+        return switch (extension) {
             case "jpg", "jpeg" -> ImageFileType.JPEG;
             case "png" -> ImageFileType.PNG;
+            case "gif" -> ImageFileType.GIF;
             case "webp" -> ImageFileType.WEBP;
             default -> ImageFileType.UNKNOWN;
         };
@@ -174,6 +191,18 @@ public class PropertyFileCompleteService {
         if (!requestedChecksum.equalsIgnoreCase(actualChecksum)) {
             throw invalidRequest(
                     "요청한 체크섬이 업로드된 파일과 일치하지 않습니다."
+            );
+        }
+    }
+
+    private void validateCompletedChecksum(
+            String requestedChecksum,
+            String storedChecksum
+    ) {
+        if (storedChecksum == null
+                || !requestedChecksum.equalsIgnoreCase(storedChecksum)) {
+            throw invalidRequest(
+                    "완료된 파일의 체크섬과 요청값이 일치하지 않습니다."
             );
         }
     }

@@ -44,10 +44,28 @@ spring:
   # kafka
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
     consumer:
       group-id: zip-da-property
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       # 아래에 추가설정 필요
+
+property:
+  kafka:
+    topic: ${PROPERTY_KAFKA_TOPIC:zipda.property.events.v1}
+  location:
+    validation:
+      min-longitude: ${PROPERTY_LOCATION_MIN_LONGITUDE:124}
+      max-longitude: ${PROPERTY_LOCATION_MAX_LONGITUDE:132}
+      min-latitude: ${PROPERTY_LOCATION_MIN_LATITUDE:33}
+      max-latitude: ${PROPERTY_LOCATION_MAX_LATITUDE:39}
+    public-location:
+      secret: ${PROPERTY_PUBLIC_LOCATION_SECRET}
+      secret-version: ${PROPERTY_PUBLIC_LOCATION_SECRET_VERSION:v1}
+      min-distance-meters: ${PROPERTY_PUBLIC_LOCATION_MIN_DISTANCE_METERS:80}
+      max-distance-meters: ${PROPERTY_PUBLIC_LOCATION_MAX_DISTANCE_METERS:180}
 
 # Springdoc Openapi
 springdoc:
@@ -86,3 +104,12 @@ minio:
     "image/gif",
     "image/webp"
   ]
+
+# Kakao Local REST API 설정
+external-api:
+  kakao-local:
+    base-url: ${KAKAO_LOCAL_BASE_URL:https://dapi.kakao.com}
+    rest-api-key: ${KAKAO_LOCAL_REST_API_KEY}
+    connect-timeout: ${KAKAO_LOCAL_CONNECT_TIMEOUT:3s}
+    read-timeout: ${KAKAO_LOCAL_READ_TIMEOUT:5s}
+    page-size: ${KAKAO_LOCAL_PAGE_SIZE:10}
