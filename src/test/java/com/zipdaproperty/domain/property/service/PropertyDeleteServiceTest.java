@@ -1,9 +1,13 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
+import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.constant.RevisionChangeScope;
 import com.zipdaproperty.domain.property.constant.RevisionChangeType;
 import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
+import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
+import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.request.PropertyDeleteRequest;
@@ -23,9 +27,13 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.same;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -73,12 +81,22 @@ class PropertyDeleteServiceTest {
     private final ObjectMapper objectMapper =
             mock(ObjectMapper.class);
 
+    private final PropertyAuditEventRecorder
+            propertyAuditEventRecorder =
+            mock(PropertyAuditEventRecorder.class);
+
+    private final PropertyKafkaEventPublisher
+            propertyKafkaEventPublisher =
+            mock(PropertyKafkaEventPublisher.class);
+
     private final PropertyDeleteService propertyDeleteService =
             new PropertyDeleteService(
                     propertyRepository,
                     propertyRevisionRepository,
                     propertyVersionPolicy,
-                    objectMapper
+                    objectMapper,
+                    propertyAuditEventRecorder,
+                    propertyKafkaEventPublisher
             );
 
     private final ActorContext ownerContext =
@@ -96,7 +114,7 @@ class PropertyDeleteServiceTest {
             );
 
     @Test
-    void delete_ownerAndValidVersion_savesPropertyAndRevision() {
+    void delete_ownerAndValidVersion_savesPropertyRevisionAuditAndPublishesKafkaEvent() {
         Property property =
                 prepareExistingProperty(
                         CURRENT_VERSION
@@ -105,38 +123,10 @@ class PropertyDeleteServiceTest {
         PropertyDeleteRequest request =
                 createRequest(CURRENT_VERSION);
 
-        when(property.getPropertyId())
-                .thenReturn(PROPERTY_ID);
-
-        when(property.getVersion())
-                .thenReturn(
-                        CURRENT_VERSION,
-                        NEXT_VERSION
-                );
-
-        when(objectMapper.writeValueAsString(property))
-                .thenReturn(
-                        "{\"deletedAt\":null}",
-                        "{\"deletedAt\":\"deleted\"}"
-                );
-
-        when(
-                objectMapper.writeValueAsString(
-                        DELETE_CHANGED_FIELDS
-                )
-        ).thenReturn(
-                """
-                [
-                  "deletedAt",
-                  "deletedByMemberId",
-                  "deletedByRole",
-                  "deleteReason"
-                ]
-                """
+        prepareSuccessfulDelete(
+                property,
+                ownerContext
         );
-
-        when(propertyRepository.saveAndFlush(property))
-                .thenReturn(property);
 
         propertyDeleteService.delete(
                 PROPERTY_ID,
@@ -207,10 +197,67 @@ class PropertyDeleteServiceTest {
                 .isEqualTo(
                         occurredAtCaptor.getValue()
                 );
+
+        verify(propertyAuditEventRecorder)
+                .recordPropertyAction(
+                        eq(PROPERTY_ID),
+                        eq(
+                                PropertyAuditActionCode
+                                        .PROPERTY_SOFT_DELETED
+                        ),
+                        eq(DELETE_REASON),
+                        isNull(),
+                        eq(occurredAtCaptor.getValue()),
+                        same(ownerContext)
+                );
+
+        verify(propertyKafkaEventPublisher)
+                .publishAfterCommit(
+                        eq(PROPERTY_ID),
+                        eq(NEXT_VERSION),
+                        eq(PropertyEventType.PROPERTY_DELETED),
+                        argThat(
+                                payload ->
+                                        PROPERTY_ID.toString().equals(
+                                                payload.get("propertyId")
+                                        )
+                                                && NEXT_VERSION.equals(
+                                                payload.get("version")
+                                        )
+                                                && occurredAtCaptor
+                                                .getValue()
+                                                .equals(
+                                                        payload.get(
+                                                                "deletedAt"
+                                                        )
+                                                )
+                                                && AUTHOR_MEMBER_ID
+                                                .toString()
+                                                .equals(
+                                                        payload.get(
+                                                                "deletedByMemberId"
+                                                        )
+                                                )
+                                                && ActorRole.USER
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "deletedByRole"
+                                                        )
+                                                )
+                                                && DELETE_REASON.equals(
+                                                payload.get(
+                                                        "deleteReason"
+                                                )
+                                        )
+                        ),
+                        eq(occurredAtCaptor.getValue()),
+                        same(ownerContext)
+                );
     }
 
     @Test
-    void delete_csAdmin_succeedsWithoutOwnership() {
+    void delete_csAdmin_savesAuditAndPublishesKafkaEventWithoutOwnership() {
         Property property =
                 prepareExistingProperty(
                         CURRENT_VERSION
@@ -219,31 +266,10 @@ class PropertyDeleteServiceTest {
         PropertyDeleteRequest request =
                 createRequest(CURRENT_VERSION);
 
-        when(property.getPropertyId())
-                .thenReturn(PROPERTY_ID);
-
-        when(property.getVersion())
-                .thenReturn(
-                        CURRENT_VERSION,
-                        NEXT_VERSION
-                );
-
-        when(objectMapper.writeValueAsString(property))
-                .thenReturn(
-                        "{\"deletedAt\":null}",
-                        "{\"deletedAt\":\"deleted\"}"
-                );
-
-        when(
-                objectMapper.writeValueAsString(
-                        DELETE_CHANGED_FIELDS
-                )
-        ).thenReturn(
-                "[\"deletedAt\"]"
+        prepareSuccessfulDelete(
+                property,
+                adminContext
         );
-
-        when(propertyRepository.saveAndFlush(property))
-                .thenReturn(property);
 
         propertyDeleteService.delete(
                 PROPERTY_ID,
@@ -264,6 +290,45 @@ class PropertyDeleteServiceTest {
         verify(propertyRevisionRepository)
                 .save(
                         any(PropertyRevision.class)
+                );
+
+        verify(propertyAuditEventRecorder)
+                .recordPropertyAction(
+                        eq(PROPERTY_ID),
+                        eq(
+                                PropertyAuditActionCode
+                                        .PROPERTY_SOFT_DELETED
+                        ),
+                        eq(DELETE_REASON),
+                        isNull(),
+                        any(Instant.class),
+                        same(adminContext)
+                );
+
+        verify(propertyKafkaEventPublisher)
+                .publishAfterCommit(
+                        eq(PROPERTY_ID),
+                        eq(NEXT_VERSION),
+                        eq(PropertyEventType.PROPERTY_DELETED),
+                        argThat(
+                                payload ->
+                                        ADMIN_MEMBER_ID
+                                                .toString()
+                                                .equals(
+                                                        payload.get(
+                                                                "deletedByMemberId"
+                                                        )
+                                                )
+                                                && ActorRole.CS_ADMIN
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "deletedByRole"
+                                                        )
+                                                )
+                        ),
+                        any(Instant.class),
+                        same(adminContext)
                 );
     }
 
@@ -315,6 +380,8 @@ class PropertyDeleteServiceTest {
         ).save(
                 any(PropertyRevision.class)
         );
+
+        verifyNoDomainEventsRecorded();
     }
 
     @Test
@@ -373,10 +440,12 @@ class PropertyDeleteServiceTest {
         ).save(
                 any(PropertyRevision.class)
         );
+
+        verifyNoDomainEventsRecorded();
     }
 
     @Test
-    void delete_optimisticLockFailure_throwsVersionConflict() {
+    void delete_optimisticLockFailure_throwsVersionConflictAndDoesNotRecordEvents() {
         Property property =
                 prepareExistingProperty(
                         CURRENT_VERSION
@@ -429,6 +498,8 @@ class PropertyDeleteServiceTest {
         ).save(
                 any(PropertyRevision.class)
         );
+
+        verifyNoDomainEventsRecorded();
     }
 
     private Property prepareExistingProperty(
@@ -446,6 +517,9 @@ class PropertyDeleteServiceTest {
                 Optional.of(property)
         );
 
+        when(property.getPropertyId())
+                .thenReturn(PROPERTY_ID);
+
         when(property.getAuthorMemberId())
                 .thenReturn(AUTHOR_MEMBER_ID);
 
@@ -453,6 +527,105 @@ class PropertyDeleteServiceTest {
                 .thenReturn(currentVersion);
 
         return property;
+    }
+
+    private void prepareSuccessfulDelete(
+            Property property,
+            ActorContext actorContext
+    ) {
+        when(property.getVersion())
+                .thenReturn(
+                        CURRENT_VERSION,
+                        NEXT_VERSION,
+                        NEXT_VERSION,
+                        NEXT_VERSION
+                );
+
+        doAnswer(
+                invocation -> {
+                    ActorContext deletionActor =
+                            invocation.getArgument(0);
+
+                    Instant deletedAt =
+                            invocation.getArgument(1);
+
+                    String deleteReason =
+                            invocation.getArgument(2);
+
+                    when(property.getDeletedAt())
+                            .thenReturn(deletedAt);
+
+                    when(property.getDeletedByMemberId())
+                            .thenReturn(
+                                    deletionActor.memberId()
+                            );
+
+                    when(property.getDeletedByRole())
+                            .thenReturn(
+                                    deletionActor.role()
+                            );
+
+                    when(property.getDeleteReason())
+                            .thenReturn(deleteReason);
+
+                    return null;
+                }
+        ).when(property)
+                .softDelete(
+                        same(actorContext),
+                        any(Instant.class),
+                        eq(DELETE_REASON)
+                );
+
+        when(objectMapper.writeValueAsString(property))
+                .thenReturn(
+                        "{\"deletedAt\":null}",
+                        "{\"deletedAt\":\"deleted\"}"
+                );
+
+        when(
+                objectMapper.writeValueAsString(
+                        DELETE_CHANGED_FIELDS
+                )
+        ).thenReturn(
+                """
+                [
+                  "deletedAt",
+                  "deletedByMemberId",
+                  "deletedByRole",
+                  "deleteReason"
+                ]
+                """
+        );
+
+        when(propertyRepository.saveAndFlush(property))
+                .thenReturn(property);
+    }
+
+    private void verifyNoDomainEventsRecorded() {
+        verify(
+                propertyAuditEventRecorder,
+                never()
+        ).recordPropertyAction(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        );
+
+        verify(
+                propertyKafkaEventPublisher,
+                never()
+        ).publishAfterCommit(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        );
     }
 
     private PropertyDeleteRequest createRequest(

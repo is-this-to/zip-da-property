@@ -1,14 +1,19 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
+import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyUpdateCommand;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
+import com.zipdaproperty.domain.property.constant.PublisherType;
 import com.zipdaproperty.domain.property.constant.RevisionChangeType;
 import com.zipdaproperty.domain.property.constant.TransactionStatus;
 import com.zipdaproperty.domain.property.constant.TransactionType;
 import com.zipdaproperty.domain.property.constant.VerificationStatus;
 import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
+import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
+import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.request.PropertyUpdateRequest;
@@ -26,6 +31,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -34,8 +40,12 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.same;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -59,6 +69,9 @@ class PropertyUpdateServiceTest {
 
     private static final String AFTER_TITLE =
             "수정 후 제목";
+
+    private static final String UPDATE_REASON =
+            "매물 핵심 정보가 수정되었습니다.";
 
     private final PropertyRepository propertyRepository =
             mock(PropertyRepository.class);
@@ -86,6 +99,14 @@ class PropertyUpdateServiceTest {
     private final ObjectMapper objectMapper =
             mock(ObjectMapper.class);
 
+    private final PropertyAuditEventRecorder
+            propertyAuditEventRecorder =
+            mock(PropertyAuditEventRecorder.class);
+
+    private final PropertyKafkaEventPublisher
+            propertyKafkaEventPublisher =
+            mock(PropertyKafkaEventPublisher.class);
+
     private final PropertyUpdateService propertyUpdateService =
             new PropertyUpdateService(
                     propertyRepository,
@@ -95,7 +116,9 @@ class PropertyUpdateServiceTest {
                     propertyUpdateCommandFactory,
                     propertyUpdatePolicy,
                     propertyPricePolicy,
-                    objectMapper
+                    objectMapper,
+                    propertyAuditEventRecorder,
+                    propertyKafkaEventPublisher
             );
 
     private final ActorContext ownerContext =
@@ -106,9 +129,11 @@ class PropertyUpdateServiceTest {
             );
 
     @Test
-    void update_ownerAndValidVersion_savesPropertyAndRevision() {
+    void update_ownerAndValidVersion_savesPropertyRevisionAuditAndPublishesKafkaEvent() {
         Property property =
                 prepareExistingProperty(CURRENT_VERSION);
+
+        prepareCompletePropertyState(property);
 
         PropertyUpdateRequest request =
                 createTitleUpdateRequest(
@@ -128,20 +153,11 @@ class PropertyUpdateServiceTest {
                         NEXT_VERSION
                 );
 
-        when(property.getPropertyId())
-                .thenReturn(PROPERTY_ID);
-
         when(property.getTitle())
-                .thenReturn(BEFORE_TITLE);
-
-        when(property.getPublicationStatus())
-                .thenReturn(PublicationStatus.IN_REVIEW);
-
-        when(property.getTransactionStatus())
-                .thenReturn(TransactionStatus.AVAILABLE);
-
-        when(property.getVerificationStatus())
-                .thenReturn(VerificationStatus.UNVERIFIED);
+                .thenReturn(
+                        BEFORE_TITLE,
+                        AFTER_TITLE
+                );
 
         when(
                 propertyUpdateCommandFactory.create(
@@ -239,6 +255,101 @@ class PropertyUpdateServiceTest {
 
         assertThat(savedRevision.getActorMemberId())
                 .isEqualTo(AUTHOR_MEMBER_ID);
+
+        ArgumentCaptor<Instant> occurredAtCaptor =
+                ArgumentCaptor.forClass(Instant.class);
+
+        verify(propertyAuditEventRecorder)
+                .recordPropertyAction(
+                        eq(PROPERTY_ID),
+                        eq(PropertyAuditActionCode.PROPERTY_UPDATED),
+                        eq(UPDATE_REASON),
+                        isNull(),
+                        occurredAtCaptor.capture(),
+                        same(ownerContext)
+                );
+
+        verify(propertyKafkaEventPublisher)
+                .publishAfterCommit(
+                        eq(PROPERTY_ID),
+                        eq(NEXT_VERSION),
+                        eq(PropertyEventType.PROPERTY_UPDATED),
+                        argThat(
+                                payload ->
+                                        PROPERTY_ID.toString().equals(
+                                                payload.get("propertyId")
+                                        )
+                                                && NEXT_VERSION.equals(
+                                                payload.get("version")
+                                        )
+                                                && List.of("title").equals(
+                                                payload.get("changedFields")
+                                        )
+                                                && REGION_ID.toString().equals(
+                                                payload.get("regionId")
+                                        )
+                                                && AUTHOR_MEMBER_ID
+                                                .toString()
+                                                .equals(
+                                                        payload.get(
+                                                                "authorMemberId"
+                                                        )
+                                                )
+                                                && PublisherType
+                                                .DIRECT_OWNER
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "publisherType"
+                                                        )
+                                                )
+                                                && PropertyType
+                                                .APARTMENT
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "propertyType"
+                                                        )
+                                                )
+                                                && TransactionType
+                                                .SALE
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "transactionType"
+                                                        )
+                                                )
+                                                && AFTER_TITLE.equals(
+                                                payload.get("title")
+                                        )
+                                                && PublicationStatus
+                                                .IN_REVIEW
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "publicationStatus"
+                                                        )
+                                                )
+                                                && TransactionStatus
+                                                .AVAILABLE
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "transactionStatus"
+                                                        )
+                                                )
+                                                && VerificationStatus
+                                                .UNVERIFIED
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "verificationStatus"
+                                                        )
+                                                )
+                        ),
+                        eq(occurredAtCaptor.getValue()),
+                        same(ownerContext)
+                );
     }
 
     @Test
@@ -288,12 +399,13 @@ class PropertyUpdateServiceTest {
         ).save(
                 any(PropertyRevision.class)
         );
+
+        verifyNoDomainEventsRecorded();
     }
 
     @Test
     void update_differentMember_throwsOwnershipRequired() {
-        Property property =
-                prepareExistingProperty(NEXT_VERSION);
+        prepareExistingProperty(NEXT_VERSION);
 
         PropertyUpdateRequest request =
                 createTitleUpdateRequest(
@@ -345,10 +457,12 @@ class PropertyUpdateServiceTest {
         ).save(
                 any(PropertyRevision.class)
         );
+
+        verifyNoDomainEventsRecorded();
     }
 
     @Test
-    void update_optimisticLockFailure_throwsVersionConflict() {
+    void update_optimisticLockFailure_throwsVersionConflictAndDoesNotRecordEvents() {
         Property property =
                 prepareExistingProperty(CURRENT_VERSION);
 
@@ -420,6 +534,8 @@ class PropertyUpdateServiceTest {
         ).save(
                 any(PropertyRevision.class)
         );
+
+        verifyNoDomainEventsRecorded();
     }
 
     private Property prepareExistingProperty(
@@ -435,6 +551,9 @@ class PropertyUpdateServiceTest {
                         )
         ).thenReturn(Optional.of(property));
 
+        when(property.getPropertyId())
+                .thenReturn(PROPERTY_ID);
+
         when(property.getAuthorMemberId())
                 .thenReturn(AUTHOR_MEMBER_ID);
 
@@ -442,6 +561,114 @@ class PropertyUpdateServiceTest {
                 .thenReturn(currentVersion);
 
         return property;
+    }
+
+    private void prepareCompletePropertyState(
+            Property property
+    ) {
+        when(property.getRegionId())
+                .thenReturn(REGION_ID);
+
+        when(property.getApartmentComplexId())
+                .thenReturn(null);
+
+        when(property.getPublisherType())
+                .thenReturn(PublisherType.DIRECT_OWNER);
+
+        when(property.getPropertyType())
+                .thenReturn(PropertyType.APARTMENT);
+
+        when(property.getTransactionType())
+                .thenReturn(TransactionType.SALE);
+
+        when(property.getSalePrice())
+                .thenReturn(500_000_000L);
+
+        when(property.getDeposit())
+                .thenReturn(null);
+
+        when(property.getMonthlyRent())
+                .thenReturn(null);
+
+        when(property.getMaintenanceFee())
+                .thenReturn(150_000L);
+
+        when(property.getSupplyArea())
+                .thenReturn(new BigDecimal("84.99"));
+
+        when(property.getExclusiveArea())
+                .thenReturn(new BigDecimal("59.99"));
+
+        when(property.getRoomCount())
+                .thenReturn(3);
+
+        when(property.getBathroomCount())
+                .thenReturn(1);
+
+        when(property.getFloor())
+                .thenReturn(5);
+
+        when(property.getTotalFloor())
+                .thenReturn(20);
+
+        when(property.getFloorCondition())
+                .thenReturn("중층");
+
+        when(property.getDirection())
+                .thenReturn("남향");
+
+        when(property.getApprovalDate())
+                .thenReturn(LocalDate.of(2020, 1, 1));
+
+        when(property.getBuildingUse())
+                .thenReturn("공동주택");
+
+        when(property.getIsParkingAvailable())
+                .thenReturn(true);
+
+        when(property.getHasElevator())
+                .thenReturn(true);
+
+        when(property.getIsPetAllowed())
+                .thenReturn(false);
+
+        when(property.getDescription())
+                .thenReturn("자동 테스트용 매물 설명");
+
+        when(property.getPublicationStatus())
+                .thenReturn(PublicationStatus.IN_REVIEW);
+
+        when(property.getTransactionStatus())
+                .thenReturn(TransactionStatus.AVAILABLE);
+
+        when(property.getVerificationStatus())
+                .thenReturn(VerificationStatus.UNVERIFIED);
+    }
+
+    private void verifyNoDomainEventsRecorded() {
+        verify(
+                propertyAuditEventRecorder,
+                never()
+        ).recordPropertyAction(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        );
+
+        verify(
+                propertyKafkaEventPublisher,
+                never()
+        ).publishAfterCommit(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        );
     }
 
     private PropertyUpdateRequest createTitleUpdateRequest(

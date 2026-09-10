@@ -1,8 +1,12 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
+import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyUpdateCommand;
 import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
+import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
+import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.request.PropertyUpdateRequest;
@@ -20,7 +24,9 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -48,6 +54,12 @@ public class PropertyUpdateService {
     private final PropertyPricePolicy propertyPricePolicy;
 
     private final ObjectMapper objectMapper;
+
+    private final PropertyAuditEventRecorder
+            propertyAuditEventRecorder;
+
+    private final PropertyKafkaEventPublisher
+            propertyKafkaEventPublisher;
 
     @Transactional
     public PropertyUpdateResponse update(
@@ -126,6 +138,13 @@ public class PropertyUpdateService {
 
         propertyRevisionRepository.save(revision);
 
+        recordUpdateEvents(
+                savedProperty,
+                changedFields,
+                actorContext,
+                occurredAt
+        );
+
         return PropertyUpdateResponse.from(savedProperty);
     }
 
@@ -152,8 +171,10 @@ public class PropertyUpdateService {
             Property property,
             ActorContext actorContext
     ) {
-        if (actorContext == null
-                || !actorContext.isMemberRequest()) {
+        if (
+                actorContext == null
+                        || !actorContext.isMemberRequest()
+        ) {
             throw new BusinessException(
                     CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
                     "회원 요청만 매물을 수정할 수 있습니다."
@@ -363,13 +384,17 @@ public class PropertyUpdateService {
             BigDecimal currentValue,
             BigDecimal requestedValue
     ) {
-        if (currentValue == null
-                && requestedValue == null) {
+        if (
+                currentValue == null
+                        && requestedValue == null
+        ) {
             return false;
         }
 
-        if (currentValue == null
-                || requestedValue == null) {
+        if (
+                currentValue == null
+                        || requestedValue == null
+        ) {
             return true;
         }
 
@@ -398,5 +423,180 @@ public class PropertyUpdateService {
                     "다른 사용자가 먼저 매물을 수정했습니다."
             );
         }
+    }
+
+    private void recordUpdateEvents(
+            Property property,
+            List<String> changedFields,
+            ActorContext actorContext,
+            Instant occurredAt
+    ) {
+        propertyAuditEventRecorder.recordPropertyAction(
+                property.getPropertyId(),
+                PropertyAuditActionCode.PROPERTY_UPDATED,
+                UPDATE_REASON,
+                null,
+                occurredAt,
+                actorContext
+        );
+
+        Map<String, Object> kafkaPayload =
+                createPropertyUpdatedPayload(
+                        property,
+                        changedFields
+                );
+
+        propertyKafkaEventPublisher.publishAfterCommit(
+                property.getPropertyId(),
+                property.getVersion(),
+                PropertyEventType.PROPERTY_UPDATED,
+                kafkaPayload,
+                occurredAt,
+                actorContext
+        );
+    }
+
+    private Map<String, Object> createPropertyUpdatedPayload(
+            Property property,
+            List<String> changedFields
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+
+        payload.put(
+                "propertyId",
+                property.getPropertyId().toString()
+        );
+        payload.put(
+                "version",
+                property.getVersion()
+        );
+        payload.put(
+                "changedFields",
+                List.copyOf(changedFields)
+        );
+        payload.put(
+                "regionId",
+                property.getRegionId().toString()
+        );
+        payload.put(
+                "apartmentComplexId",
+                toStringOrNull(
+                        property.getApartmentComplexId()
+                )
+        );
+        payload.put(
+                "authorMemberId",
+                property.getAuthorMemberId().toString()
+        );
+        payload.put(
+                "publisherType",
+                property.getPublisherType().name()
+        );
+        payload.put(
+                "propertyType",
+                property.getPropertyType().name()
+        );
+        payload.put(
+                "transactionType",
+                property.getTransactionType().name()
+        );
+        payload.put(
+                "salePrice",
+                property.getSalePrice()
+        );
+        payload.put(
+                "deposit",
+                property.getDeposit()
+        );
+        payload.put(
+                "monthlyRent",
+                property.getMonthlyRent()
+        );
+        payload.put(
+                "maintenanceFee",
+                property.getMaintenanceFee()
+        );
+        payload.put(
+                "supplyArea",
+                property.getSupplyArea()
+        );
+        payload.put(
+                "exclusiveArea",
+                property.getExclusiveArea()
+        );
+        payload.put(
+                "roomCount",
+                property.getRoomCount()
+        );
+        payload.put(
+                "bathroomCount",
+                property.getBathroomCount()
+        );
+        payload.put(
+                "floor",
+                property.getFloor()
+        );
+        payload.put(
+                "totalFloor",
+                property.getTotalFloor()
+        );
+        payload.put(
+                "floorCondition",
+                property.getFloorCondition()
+        );
+        payload.put(
+                "direction",
+                property.getDirection()
+        );
+        payload.put(
+                "approvalDate",
+                property.getApprovalDate()
+        );
+        payload.put(
+                "buildingUse",
+                property.getBuildingUse()
+        );
+        payload.put(
+                "isParkingAvailable",
+                property.getIsParkingAvailable()
+        );
+        payload.put(
+                "hasElevator",
+                property.getHasElevator()
+        );
+        payload.put(
+                "isPetAllowed",
+                property.getIsPetAllowed()
+        );
+        payload.put(
+                "title",
+                property.getTitle()
+        );
+        payload.put(
+                "description",
+                property.getDescription()
+        );
+        payload.put(
+                "publicationStatus",
+                property.getPublicationStatus().name()
+        );
+        payload.put(
+                "transactionStatus",
+                property.getTransactionStatus().name()
+        );
+        payload.put(
+                "verificationStatus",
+                property.getVerificationStatus().name()
+        );
+
+        return payload;
+    }
+
+    private String toStringOrNull(Long value) {
+        if (value == null) {
+            return null;
+        }
+
+        return value.toString();
     }
 }

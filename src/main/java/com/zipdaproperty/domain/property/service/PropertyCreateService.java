@@ -1,5 +1,7 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
+import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyCreateCommand;
 import com.zipdaproperty.domain.property.constant.PropertyStatusType;
 import com.zipdaproperty.domain.property.constant.PublisherType;
@@ -7,6 +9,8 @@ import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.entity.PropertyPublisherSnapshot;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.entity.PropertyStatusHistory;
+import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
+import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.repository.PropertyPublisherSnapshotRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
@@ -24,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -32,7 +37,7 @@ import java.util.Map;
 public class PropertyCreateService {
 
     private static final String CREATE_REASON_CODE =
-            "PROPERTY_CREATED";
+            PropertyAuditActionCode.PROPERTY_CREATED;
 
     private static final String CREATE_REASON =
             "매물 등록으로 초기 상태가 설정되었습니다.";
@@ -41,7 +46,7 @@ public class PropertyCreateService {
             "regionId",
             "apartmentComplexId",
             "authorMemberId",
-            "publisherType",  // 매물 주체유형
+            "publisherType",
             "propertyType",
             "transactionType",
             "salePrice",
@@ -86,6 +91,12 @@ public class PropertyCreateService {
     private final TsidGenerator tsidGenerator;
 
     private final ObjectMapper objectMapper;
+
+    private final PropertyAuditEventRecorder
+            propertyAuditEventRecorder;
+
+    private final PropertyKafkaEventPublisher
+            propertyKafkaEventPublisher;
 
     @Transactional
     public PropertyCreateResponse create(
@@ -152,6 +163,12 @@ public class PropertyCreateService {
         savePublisherSnapshot(
                 savedProperty,
                 savedRevision,
+                actorContext,
+                occurredAt
+        );
+
+        recordCreationEvents(
+                savedProperty,
                 actorContext,
                 occurredAt
         );
@@ -312,5 +329,171 @@ public class PropertyCreateService {
         propertyPublisherSnapshotRepository.save(
                 publisherSnapshot
         );
+    }
+
+    private void recordCreationEvents(
+            Property property,
+            ActorContext actorContext,
+            Instant occurredAt
+    ) {
+        propertyAuditEventRecorder.recordPropertyAction(
+                property.getPropertyId(),
+                PropertyAuditActionCode.PROPERTY_CREATED,
+                CREATE_REASON,
+                null,
+                occurredAt,
+                actorContext
+        );
+
+        Map<String, Object> kafkaPayload =
+                createPropertyCreatedPayload(property);
+
+        propertyKafkaEventPublisher.publishAfterCommit(
+                property.getPropertyId(),
+                property.getVersion(),
+                PropertyEventType.PROPERTY_CREATED,
+                kafkaPayload,
+                occurredAt,
+                actorContext
+        );
+    }
+
+    private Map<String, Object> createPropertyCreatedPayload(
+            Property property
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+
+        payload.put(
+                "propertyId",
+                property.getPropertyId().toString()
+        );
+        payload.put(
+                "version",
+                property.getVersion()
+        );
+        payload.put(
+                "regionId",
+                property.getRegionId().toString()
+        );
+        payload.put(
+                "apartmentComplexId",
+                toStringOrNull(
+                        property.getApartmentComplexId()
+                )
+        );
+        payload.put(
+                "authorMemberId",
+                property.getAuthorMemberId().toString()
+        );
+        payload.put(
+                "publisherType",
+                property.getPublisherType().name()
+        );
+        payload.put(
+                "propertyType",
+                property.getPropertyType().name()
+        );
+        payload.put(
+                "transactionType",
+                property.getTransactionType().name()
+        );
+        payload.put(
+                "salePrice",
+                property.getSalePrice()
+        );
+        payload.put(
+                "deposit",
+                property.getDeposit()
+        );
+        payload.put(
+                "monthlyRent",
+                property.getMonthlyRent()
+        );
+        payload.put(
+                "maintenanceFee",
+                property.getMaintenanceFee()
+        );
+        payload.put(
+                "supplyArea",
+                property.getSupplyArea()
+        );
+        payload.put(
+                "exclusiveArea",
+                property.getExclusiveArea()
+        );
+        payload.put(
+                "roomCount",
+                property.getRoomCount()
+        );
+        payload.put(
+                "bathroomCount",
+                property.getBathroomCount()
+        );
+        payload.put(
+                "floor",
+                property.getFloor()
+        );
+        payload.put(
+                "totalFloor",
+                property.getTotalFloor()
+        );
+        payload.put(
+                "floorCondition",
+                property.getFloorCondition()
+        );
+        payload.put(
+                "direction",
+                property.getDirection()
+        );
+        payload.put(
+                "approvalDate",
+                property.getApprovalDate()
+        );
+        payload.put(
+                "buildingUse",
+                property.getBuildingUse()
+        );
+        payload.put(
+                "isParkingAvailable",
+                property.getIsParkingAvailable()
+        );
+        payload.put(
+                "hasElevator",
+                property.getHasElevator()
+        );
+        payload.put(
+                "isPetAllowed",
+                property.getIsPetAllowed()
+        );
+        payload.put(
+                "title",
+                property.getTitle()
+        );
+        payload.put(
+                "description",
+                property.getDescription()
+        );
+        payload.put(
+                "publicationStatus",
+                property.getPublicationStatus().name()
+        );
+        payload.put(
+                "transactionStatus",
+                property.getTransactionStatus().name()
+        );
+        payload.put(
+                "verificationStatus",
+                property.getVerificationStatus().name()
+        );
+
+        return payload;
+    }
+
+    private String toStringOrNull(Long value) {
+        if (value == null) {
+            return null;
+        }
+
+        return value.toString();
     }
 }
