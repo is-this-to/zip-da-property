@@ -2,9 +2,9 @@ package com.zipdaproperty.domain.location.service;
 
 import com.zipdaproperty.domain.location.client.KakaoLocalClient;
 import com.zipdaproperty.domain.location.client.response.KakaoAddressSearchApiResponse;
-import com.zipdaproperty.domain.location.exception.KakaoLocalApiException;
 import com.zipdaproperty.domain.location.request.KakaoAddressSearchRequest;
 import com.zipdaproperty.domain.location.response.KakaoAddressSearchResponse;
+import com.zipdaproperty.global.error.custom.business.KakaoLocalApiException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
