@@ -1,5 +1,7 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
+import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.constant.PropertyStatusType;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.constant.RevisionChangeScope;
@@ -9,6 +11,8 @@ import com.zipdaproperty.domain.property.constant.VerificationStatus;
 import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.entity.PropertyStatusHistory;
+import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
+import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.repository.PropertyStatusHistoryRepository;
@@ -23,14 +27,19 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.dao.OptimisticLockingFailureException;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.same;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -77,6 +86,14 @@ class PropertyTransactionStatusChangeServiceTest {
     private final ObjectMapper objectMapper =
             mock(ObjectMapper.class);
 
+    private final PropertyAuditEventRecorder
+            propertyAuditEventRecorder =
+            mock(PropertyAuditEventRecorder.class);
+
+    private final PropertyKafkaEventPublisher
+            propertyKafkaEventPublisher =
+            mock(PropertyKafkaEventPublisher.class);
+
     private final PropertyTransactionStatusChangeService
             propertyTransactionStatusChangeService =
             new PropertyTransactionStatusChangeService(
@@ -85,7 +102,9 @@ class PropertyTransactionStatusChangeServiceTest {
                     propertyStatusHistoryRepository,
                     propertyVersionPolicy,
                     transactionStatusPolicy,
-                    objectMapper
+                    objectMapper,
+                    propertyAuditEventRecorder,
+                    propertyKafkaEventPublisher
             );
 
     private final ActorContext ownerContext =
@@ -96,7 +115,7 @@ class PropertyTransactionStatusChangeServiceTest {
             );
 
     @Test
-    void change_availableToReserved_savesPropertyRevisionAndHistory() {
+    void change_availableToReserved_savesAllHistoryAuditAndPublishesKafkaEvent() {
         Property property =
                 prepareExistingProperty(CURRENT_VERSION);
 
@@ -109,55 +128,12 @@ class PropertyTransactionStatusChangeServiceTest {
                         CURRENT_VERSION
                 );
 
-        when(property.getPropertyId())
-                .thenReturn(PROPERTY_ID);
-
-        when(property.getVersion())
-                .thenReturn(
-                        CURRENT_VERSION,
-                        NEXT_VERSION,
-                        NEXT_VERSION,
-                        NEXT_VERSION
-                );
-
-        when(property.getTransactionStatus())
-                .thenReturn(
-                        TransactionStatus.AVAILABLE,
-                        TransactionStatus.RESERVED,
-                        TransactionStatus.RESERVED
-                );
-
-        when(property.getPublicationStatus())
-                .thenReturn(PublicationStatus.IN_REVIEW);
-
-        when(property.getVerificationStatus())
-                .thenReturn(VerificationStatus.UNVERIFIED);
-
-        when(objectMapper.writeValueAsString(property))
-                .thenReturn(
-                        "{\"transactionStatus\":\"AVAILABLE\"}",
-                        "{\"transactionStatus\":\"RESERVED\"}"
-                );
-
-        when(
-                objectMapper.writeValueAsString(
-                        List.of("transactionStatus")
-                )
-        ).thenReturn(
-                "[\"transactionStatus\"]"
+        prepareSuccessfulChange(
+                property,
+                persistedRevision,
+                TransactionStatus.AVAILABLE,
+                TransactionStatus.RESERVED
         );
-
-        when(propertyRepository.saveAndFlush(property))
-                .thenReturn(property);
-
-        when(persistedRevision.getPropertyRevisionId())
-                .thenReturn(PROPERTY_REVISION_ID);
-
-        when(
-                propertyRevisionRepository.saveAndFlush(
-                        any(PropertyRevision.class)
-                )
-        ).thenReturn(persistedRevision);
 
         PropertyTransactionStatusChangeResponse response =
                 propertyTransactionStatusChangeService.change(
@@ -285,6 +261,132 @@ class PropertyTransactionStatusChangeServiceTest {
 
         assertThat(savedHistory.getOccurredAt())
                 .isEqualTo(savedRevision.getOccurredAt());
+
+        ArgumentCaptor<Instant> occurredAtCaptor =
+                ArgumentCaptor.forClass(Instant.class);
+
+        verify(propertyAuditEventRecorder)
+                .recordPropertyAction(
+                        eq(PROPERTY_ID),
+                        eq(
+                                PropertyAuditActionCode
+                                        .PROPERTY_TRANSACTION_STATUS_CHANGED
+                        ),
+                        eq(CHANGE_REASON),
+                        isNull(),
+                        occurredAtCaptor.capture(),
+                        same(ownerContext)
+                );
+
+        verify(propertyKafkaEventPublisher)
+                .publishAfterCommit(
+                        eq(PROPERTY_ID),
+                        eq(NEXT_VERSION),
+                        eq(PropertyEventType.PROPERTY_UPDATED),
+                        argThat(
+                                payload ->
+                                        PROPERTY_ID.toString().equals(
+                                                payload.get("propertyId")
+                                        )
+                                                && NEXT_VERSION.equals(
+                                                payload.get("version")
+                                        )
+                                                && TransactionStatus
+                                                .AVAILABLE
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "beforeTransactionStatus"
+                                                        )
+                                                )
+                                                && TransactionStatus
+                                                .RESERVED
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "transactionStatus"
+                                                        )
+                                                )
+                                                && CHANGE_REASON.equals(
+                                                payload.get("reason")
+                                        )
+                        ),
+                        eq(occurredAtCaptor.getValue()),
+                        same(ownerContext)
+                );
+    }
+
+    @Test
+    void change_reservedToCompleted_publishesPropertyCompletedKafkaEvent() {
+        Property property =
+                prepareExistingProperty(CURRENT_VERSION);
+
+        PropertyRevision persistedRevision =
+                mock(PropertyRevision.class);
+
+        PropertyTransactionStatusChangeRequest request =
+                createRequest(
+                        TransactionStatus.COMPLETED,
+                        CURRENT_VERSION
+                );
+
+        prepareSuccessfulChange(
+                property,
+                persistedRevision,
+                TransactionStatus.RESERVED,
+                TransactionStatus.COMPLETED
+        );
+
+        PropertyTransactionStatusChangeResponse response =
+                propertyTransactionStatusChangeService.change(
+                        PROPERTY_ID,
+                        request,
+                        ownerContext
+                );
+
+        assertThat(response.transactionStatus())
+                .isEqualTo(TransactionStatus.COMPLETED);
+
+        verify(propertyAuditEventRecorder)
+                .recordPropertyAction(
+                        eq(PROPERTY_ID),
+                        eq(
+                                PropertyAuditActionCode
+                                        .PROPERTY_TRANSACTION_STATUS_CHANGED
+                        ),
+                        eq(CHANGE_REASON),
+                        isNull(),
+                        any(Instant.class),
+                        same(ownerContext)
+                );
+
+        verify(propertyKafkaEventPublisher)
+                .publishAfterCommit(
+                        eq(PROPERTY_ID),
+                        eq(NEXT_VERSION),
+                        eq(PropertyEventType.PROPERTY_COMPLETED),
+                        argThat(
+                                payload ->
+                                        TransactionStatus
+                                                .RESERVED
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "beforeTransactionStatus"
+                                                        )
+                                                )
+                                                && TransactionStatus
+                                                .COMPLETED
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "transactionStatus"
+                                                        )
+                                                )
+                        ),
+                        any(Instant.class),
+                        same(ownerContext)
+                );
     }
 
     @Test
@@ -322,26 +424,8 @@ class PropertyTransactionStatusChangeServiceTest {
                 any(ActorContext.class)
         );
 
-        verify(
-                propertyRepository,
-                never()
-        ).saveAndFlush(
-                any(Property.class)
-        );
-
-        verify(
-                propertyRevisionRepository,
-                never()
-        ).saveAndFlush(
-                any(PropertyRevision.class)
-        );
-
-        verify(
-                propertyStatusHistoryRepository,
-                never()
-        ).save(
-                any(PropertyStatusHistory.class)
-        );
+        verifyNoPersistenceAfterPropertySave();
+        verifyNoDomainEventsRecorded();
     }
 
     @Test
@@ -387,26 +471,8 @@ class PropertyTransactionStatusChangeServiceTest {
                 any(ActorContext.class)
         );
 
-        verify(
-                propertyRepository,
-                never()
-        ).saveAndFlush(
-                any(Property.class)
-        );
-
-        verify(
-                propertyRevisionRepository,
-                never()
-        ).saveAndFlush(
-                any(PropertyRevision.class)
-        );
-
-        verify(
-                propertyStatusHistoryRepository,
-                never()
-        ).save(
-                any(PropertyStatusHistory.class)
-        );
+        verifyNoPersistenceAfterPropertySave();
+        verifyNoDomainEventsRecorded();
     }
 
     @Test
@@ -448,30 +514,12 @@ class PropertyTransactionStatusChangeServiceTest {
                 any(ActorContext.class)
         );
 
-        verify(
-                propertyRepository,
-                never()
-        ).saveAndFlush(
-                any(Property.class)
-        );
-
-        verify(
-                propertyRevisionRepository,
-                never()
-        ).saveAndFlush(
-                any(PropertyRevision.class)
-        );
-
-        verify(
-                propertyStatusHistoryRepository,
-                never()
-        ).save(
-                any(PropertyStatusHistory.class)
-        );
+        verifyNoPersistenceAfterPropertySave();
+        verifyNoDomainEventsRecorded();
     }
 
     @Test
-    void change_optimisticLockFailure_throwsVersionConflict() {
+    void change_optimisticLockFailure_throwsVersionConflictAndDoesNotRecordEvents() {
         Property property =
                 prepareExistingProperty(CURRENT_VERSION);
 
@@ -518,6 +566,9 @@ class PropertyTransactionStatusChangeServiceTest {
                         ownerContext
                 );
 
+        verify(propertyRepository)
+                .saveAndFlush(property);
+
         verify(
                 propertyRevisionRepository,
                 never()
@@ -531,6 +582,8 @@ class PropertyTransactionStatusChangeServiceTest {
         ).save(
                 any(PropertyStatusHistory.class)
         );
+
+        verifyNoDomainEventsRecorded();
     }
 
     private Property prepareExistingProperty(
@@ -548,6 +601,9 @@ class PropertyTransactionStatusChangeServiceTest {
                 Optional.of(property)
         );
 
+        when(property.getPropertyId())
+                .thenReturn(PROPERTY_ID);
+
         when(property.getAuthorMemberId())
                 .thenReturn(AUTHOR_MEMBER_ID);
 
@@ -555,6 +611,117 @@ class PropertyTransactionStatusChangeServiceTest {
                 .thenReturn(currentVersion);
 
         return property;
+    }
+
+    private void prepareSuccessfulChange(
+            Property property,
+            PropertyRevision persistedRevision,
+            TransactionStatus beforeStatus,
+            TransactionStatus afterStatus
+    ) {
+        when(property.getVersion())
+                .thenReturn(
+                        CURRENT_VERSION,
+                        NEXT_VERSION,
+                        NEXT_VERSION,
+                        NEXT_VERSION,
+                        NEXT_VERSION,
+                        NEXT_VERSION
+                );
+
+        when(property.getTransactionStatus())
+                .thenReturn(
+                        beforeStatus,
+                        afterStatus,
+                        afterStatus,
+                        afterStatus,
+                        afterStatus
+                );
+
+        when(property.getPublicationStatus())
+                .thenReturn(PublicationStatus.IN_REVIEW);
+
+        when(property.getVerificationStatus())
+                .thenReturn(VerificationStatus.UNVERIFIED);
+
+        when(objectMapper.writeValueAsString(property))
+                .thenReturn(
+                        "{\"transactionStatus\":\""
+                                + beforeStatus.name()
+                                + "\"}",
+                        "{\"transactionStatus\":\""
+                                + afterStatus.name()
+                                + "\"}"
+                );
+
+        when(
+                objectMapper.writeValueAsString(
+                        List.of("transactionStatus")
+                )
+        ).thenReturn(
+                "[\"transactionStatus\"]"
+        );
+
+        when(propertyRepository.saveAndFlush(property))
+                .thenReturn(property);
+
+        when(persistedRevision.getPropertyRevisionId())
+                .thenReturn(PROPERTY_REVISION_ID);
+
+        when(
+                propertyRevisionRepository.saveAndFlush(
+                        any(PropertyRevision.class)
+                )
+        ).thenReturn(persistedRevision);
+    }
+
+    private void verifyNoPersistenceAfterPropertySave() {
+        verify(
+                propertyRepository,
+                never()
+        ).saveAndFlush(
+                any(Property.class)
+        );
+
+        verify(
+                propertyRevisionRepository,
+                never()
+        ).saveAndFlush(
+                any(PropertyRevision.class)
+        );
+
+        verify(
+                propertyStatusHistoryRepository,
+                never()
+        ).save(
+                any(PropertyStatusHistory.class)
+        );
+    }
+
+    private void verifyNoDomainEventsRecorded() {
+        verify(
+                propertyAuditEventRecorder,
+                never()
+        ).recordPropertyAction(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        );
+
+        verify(
+                propertyKafkaEventPublisher,
+                never()
+        ).publishAfterCommit(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        );
     }
 
     private PropertyTransactionStatusChangeRequest createRequest(
