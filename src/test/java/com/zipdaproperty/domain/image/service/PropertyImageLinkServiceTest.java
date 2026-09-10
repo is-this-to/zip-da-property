@@ -1,6 +1,7 @@
 package com.zipdaproperty.domain.image.service;
 
 import com.zipdaproperty.domain.file.constant.FilePurpose;
+import com.zipdaproperty.domain.file.constant.UploadStatus;
 import com.zipdaproperty.domain.file.entity.PropertyFile;
 import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
 import com.zipdaproperty.domain.image.entity.PropertyImage;
@@ -34,11 +35,12 @@ class PropertyImageLinkServiceTest {
     private static final long PROPERTY_ID = 100L;
     private static final long OWNER_MEMBER_ID = 200L;
 
-    private static final ActorContext ACTOR_CONTEXT = ActorContext.member(
-            OWNER_MEMBER_ID,
-            ActorRole.USER,
-            "property-image-link-test"
-    );
+    private static final ActorContext ACTOR_CONTEXT =
+            ActorContext.member(
+                    OWNER_MEMBER_ID,
+                    ActorRole.USER,
+                    "property-image-link-test"
+            );
 
     private final PropertyFileRepository propertyFileRepository =
             mock(PropertyFileRepository.class);
@@ -139,6 +141,105 @@ class PropertyImageLinkServiceTest {
     }
 
     @Test
+    void linkImages_verifiedFile_marksFileAsLinkedAndRecordsLinkedAt() {
+        Long fileId = 1_001L;
+
+        PropertyFile propertyFile =
+                prepareActiveCompletedFile(
+                        fileId,
+                        OWNER_MEMBER_ID
+                );
+
+        assertThat(propertyFile.getUploadStatus())
+                .isEqualTo(UploadStatus.VERIFIED);
+
+        assertThat(propertyFile.getLinkedAt())
+                .isNull();
+
+        service.linkImages(
+                PROPERTY_ID,
+                List.of(fileId),
+                ACTOR_CONTEXT
+        );
+
+        assertThat(propertyFile.getUploadStatus())
+                .isEqualTo(UploadStatus.LINKED);
+
+        assertThat(propertyFile.getLinkedAt())
+                .isNotNull();
+    }
+
+    @Test
+    void linkImages_nonPropertyImagePurpose_rejects() {
+        Long fileId = 1_001L;
+
+        PropertyFile propertyFile =
+                propertyFile(
+                        fileId,
+                        OWNER_MEMBER_ID,
+                        FilePurpose.VERIFICATION,
+                        true
+                );
+
+        when(
+                propertyFileRepository
+                        .findByPropertyFileIdAndDeletedAtIsNull(
+                                fileId
+                        )
+        ).thenReturn(
+                Optional.of(propertyFile)
+        );
+
+        assertInvalidRequest(
+                () -> service.linkImages(
+                        PROPERTY_ID,
+                        List.of(fileId),
+                        ACTOR_CONTEXT
+                )
+        );
+
+        verify(
+                propertyImageRepository,
+                never()
+        ).saveAll(anyList());
+
+        assertThat(propertyFile.getUploadStatus())
+                .isEqualTo(UploadStatus.VERIFIED);
+
+        assertThat(propertyFile.getLinkedAt())
+                .isNull();
+    }
+
+    @Test
+    void linkImages_alreadyLinkedFile_rejects() {
+        Long fileId = 1_001L;
+
+        PropertyFile propertyFile =
+                prepareActiveCompletedFile(
+                        fileId,
+                        OWNER_MEMBER_ID
+                );
+
+        propertyFile.markLinked(ACTOR_CONTEXT);
+
+        assertThat(propertyFile.getUploadStatus())
+                .isEqualTo(UploadStatus.LINKED);
+
+        assertInvalidRequest(
+                () -> service.linkImages(
+                        PROPERTY_ID,
+                        List.of(fileId),
+                        ACTOR_CONTEXT
+                )
+        );
+
+        verify(
+                propertyImageRepository,
+                never()
+        ).saveAll(anyList());
+    }
+
+    @Test
     void linkImages_nullFileIds_rejects() {
         assertInvalidRequest(
                 () -> service.linkImages(
@@ -172,8 +273,7 @@ class PropertyImageLinkServiceTest {
 
     @Test
     void linkImages_thirtyOneFiles_rejects() {
-        List<Long> fileIds =
-                new ArrayList<>();
+        List<Long> fileIds = new ArrayList<>();
 
         for (long fileId = 1; fileId <= 31; fileId++) {
             fileIds.add(fileId);
@@ -195,8 +295,7 @@ class PropertyImageLinkServiceTest {
 
     @Test
     void linkImages_nullFileId_rejects() {
-        List<Long> fileIds =
-                new ArrayList<>();
+        List<Long> fileIds = new ArrayList<>();
 
         fileIds.add(1_001L);
         fileIds.add(null);
@@ -299,13 +398,14 @@ class PropertyImageLinkServiceTest {
     }
 
     @Test
-    void linkImages_incompleteFile_rejects() {
+    void linkImages_unverifiedFile_rejects() {
         Long fileId = 1_001L;
 
         PropertyFile propertyFile =
                 propertyFile(
                         fileId,
                         OWNER_MEMBER_ID,
+                        FilePurpose.PROPERTY_IMAGE,
                         false
                 );
 
@@ -317,6 +417,9 @@ class PropertyImageLinkServiceTest {
         ).thenReturn(
                 Optional.of(propertyFile)
         );
+
+        assertThat(propertyFile.getUploadStatus())
+                .isEqualTo(UploadStatus.CREATED);
 
         assertInvalidRequest(
                 () -> service.linkImages(
@@ -374,28 +477,31 @@ class PropertyImageLinkServiceTest {
     }
 
     @Test
-    void linkImages_oneInvalidFileAmongMany_doesNotSaveAnyImage() {
+    void linkImages_oneInvalidFileAmongMany_doesNotSaveOrLinkAnyImage() {
         Long validFileId = 1_001L;
-        Long incompleteFileId = 1_002L;
+        Long invalidFileId = 1_002L;
 
-        prepareActiveCompletedFile(
-                validFileId,
-                OWNER_MEMBER_ID
-        );
+        PropertyFile validFile =
+                prepareActiveCompletedFile(
+                        validFileId,
+                        OWNER_MEMBER_ID
+                );
+
+        PropertyFile invalidFile =
+                propertyFile(
+                        invalidFileId,
+                        OWNER_MEMBER_ID,
+                        FilePurpose.PROPERTY_IMAGE,
+                        false
+                );
 
         when(
                 propertyFileRepository
                         .findByPropertyFileIdAndDeletedAtIsNull(
-                                incompleteFileId
+                                invalidFileId
                         )
         ).thenReturn(
-                Optional.of(
-                        propertyFile(
-                                incompleteFileId,
-                                OWNER_MEMBER_ID,
-                                false
-                        )
-                )
+                Optional.of(invalidFile)
         );
 
         assertInvalidRequest(
@@ -403,7 +509,7 @@ class PropertyImageLinkServiceTest {
                         PROPERTY_ID,
                         List.of(
                                 validFileId,
-                                incompleteFileId
+                                invalidFileId
                         ),
                         ACTOR_CONTEXT
                 )
@@ -413,62 +519,42 @@ class PropertyImageLinkServiceTest {
                 propertyImageRepository,
                 never()
         ).saveAll(anyList());
+
+        assertThat(validFile.getUploadStatus())
+                .isEqualTo(UploadStatus.VERIFIED);
+
+        assertThat(validFile.getLinkedAt())
+                .isNull();
     }
 
-    @Test
-    void linkImages_doesNotApplyGlobalFileDuplicatePolicy() {
-        Long fileId = 1_001L;
-
-        prepareActiveCompletedFile(
-                fileId,
-                OWNER_MEMBER_ID
-        );
-
-        service.linkImages(
-                999L,
-                List.of(fileId),
-                ACTOR_CONTEXT
-        );
-
-        verify(
-                propertyImageRepository,
-                never()
-        ).existsByPropertyFileIdAndDeletedAtIsNull(
-                fileId
-        );
-
-        assertImage(
-                captureSavedImages().getFirst(),
-                999L,
-                fileId,
-                0,
-                true
-        );
-    }
-
-    private void prepareActiveCompletedFile(
+    private PropertyFile prepareActiveCompletedFile(
             Long fileId,
             Long ownerMemberId
     ) {
+        PropertyFile propertyFile =
+                propertyFile(
+                        fileId,
+                        ownerMemberId,
+                        FilePurpose.PROPERTY_IMAGE,
+                        true
+                );
+
         when(
                 propertyFileRepository
                         .findByPropertyFileIdAndDeletedAtIsNull(
                                 fileId
                         )
         ).thenReturn(
-                Optional.of(
-                        propertyFile(
-                                fileId,
-                                ownerMemberId,
-                                true
-                        )
-                )
+                Optional.of(propertyFile)
         );
+
+        return propertyFile;
     }
 
     private PropertyFile propertyFile(
             Long fileId,
             Long ownerMemberId,
+            FilePurpose filePurpose,
             boolean completed
     ) {
         ActorContext ownerContext =
@@ -482,7 +568,7 @@ class PropertyImageLinkServiceTest {
                 PropertyFile.create(
                         fileId,
                         "upload-session-" + fileId,
-                        FilePurpose.PROPERTY_IMAGE,
+                        filePurpose,
                         "photo-" + fileId + ".jpg",
                         1024L,
                         "property-files/" + fileId + ".jpg",
@@ -551,8 +637,7 @@ class PropertyImageLinkServiceTest {
                                 exception
                                         .getCustomResponseCode()
                         ).isEqualTo(
-                                CustomResponseCode
-                                        .INVALID_REQUEST
+                                CustomResponseCode.INVALID_REQUEST
                         )
         );
     }

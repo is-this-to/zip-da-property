@@ -1,12 +1,13 @@
 package com.zipdaproperty.domain.image.service;
 
+import com.zipdaproperty.domain.file.constant.FilePurpose;
 import com.zipdaproperty.domain.file.entity.PropertyFile;
-import com.zipdaproperty.global.error.custom.business.FileOwnershipRequiredException;
 import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
 import com.zipdaproperty.domain.image.entity.PropertyImage;
 import com.zipdaproperty.domain.image.repository.PropertyImageRepository;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.error.custom.BusinessException;
+import com.zipdaproperty.global.error.custom.business.FileOwnershipRequiredException;
 import com.zipdaproperty.global.error.custom.business.NotFoundResourceException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import lombok.RequiredArgsConstructor;
@@ -37,41 +38,63 @@ public class PropertyImageLinkService {
         validateFileIds(fileIds);
 
         List<PropertyImage> images = new ArrayList<>();
+        List<PropertyFile> propertyFiles = new ArrayList<>();
 
         for (int index = 0; index < fileIds.size(); index++) {
             Long fileId = fileIds.get(index);
 
-            PropertyFile propertyFile = findActiveFile(fileId);
+            PropertyFile propertyFile =
+                    findActiveFile(fileId);
 
-            validateOwnership(propertyFile, actorContext);
-            validateCompleted(propertyFile);
-            validateNotAlreadyLinked(propertyId, fileId);
-
-            PropertyImage propertyImage = PropertyImage.create(
-                    propertyId,
-                    fileId,
-                    index,
-                    index == 0,
-                    null,
+            validateOwnership(
+                    propertyFile,
                     actorContext
             );
 
+            validateFilePurpose(propertyFile);
+
+            validateReadyToLink(propertyFile);
+
+            validateNotAlreadyLinked(
+                    propertyId,
+                    fileId
+            );
+
+            PropertyImage propertyImage =
+                    PropertyImage.create(
+                            propertyId,
+                            fileId,
+                            index,
+                            index == 0,
+                            null,
+                            actorContext
+                    );
+
+            propertyFiles.add(propertyFile);
             images.add(propertyImage);
         }
 
         propertyImageRepository.saveAll(images);
+
+        for (PropertyFile propertyFile : propertyFiles) {
+            propertyFile.markLinked(actorContext);
+        }
     }
 
-    private void validateFileIds(List<Long> fileIds) {
+    private void validateFileIds(
+            List<Long> fileIds
+    ) {
         if (fileIds == null
                 || fileIds.size() < MIN_IMAGE_COUNT
                 || fileIds.size() > MAX_IMAGE_COUNT) {
+
             throw invalidRequest(
                     "매물 이미지는 1개 이상 30개 이하로 등록해야 합니다."
             );
         }
 
-        Set<Long> uniqueFileIds = new HashSet<>();
+        Set<Long> uniqueFileIds =
+                new HashSet<>();
 
         for (Long fileId : fileIds) {
             if (fileId == null) {
@@ -88,30 +111,52 @@ public class PropertyImageLinkService {
         }
     }
 
-    private PropertyFile findActiveFile(Long fileId) {
+    private PropertyFile findActiveFile(
+            Long fileId
+    ) {
         return propertyFileRepository
                 .findByPropertyFileIdAndDeletedAtIsNull(fileId)
-                .orElseThrow(() -> new NotFoundResourceException(
-                        "파일을 찾을 수 없습니다."
-                ));
+                .orElseThrow(
+                        () -> new NotFoundResourceException(
+                                "파일을 찾을 수 없습니다."
+                        )
+                );
     }
 
     private void validateOwnership(
             PropertyFile propertyFile,
             ActorContext actorContext
     ) {
-        if (!propertyFile.getOwnerMemberId()
+        if (actorContext == null
+                || actorContext.memberId() == null
+                || !propertyFile
+                .getOwnerMemberId()
                 .equals(actorContext.memberId())) {
+
             throw new FileOwnershipRequiredException(
                     "본인이 업로드한 파일만 매물 이미지로 연결할 수 있습니다."
             );
         }
     }
 
-    private void validateCompleted(PropertyFile propertyFile) {
-        if (propertyFile.getChecksum() == null) {
+    private void validateFilePurpose(
+            PropertyFile propertyFile
+    ) {
+        if (propertyFile.getFilePurpose()
+                != FilePurpose.PROPERTY_IMAGE) {
+
             throw invalidRequest(
-                    "업로드 완료 처리된 파일만 매물 이미지로 연결할 수 있습니다."
+                    "매물 이미지 용도로 업로드한 파일만 연결할 수 있습니다."
+            );
+        }
+    }
+
+    private void validateReadyToLink(
+            PropertyFile propertyFile
+    ) {
+        if (!propertyFile.isReadyToLink()) {
+            throw invalidRequest(
+                    "VERIFIED 상태의 파일만 매물 이미지로 연결할 수 있습니다."
             );
         }
     }
@@ -135,7 +180,9 @@ public class PropertyImageLinkService {
         }
     }
 
-    private BusinessException invalidRequest(String message) {
+    private BusinessException invalidRequest(
+            String message
+    ) {
         return new BusinessException(
                 CustomResponseCode.INVALID_REQUEST,
                 message
