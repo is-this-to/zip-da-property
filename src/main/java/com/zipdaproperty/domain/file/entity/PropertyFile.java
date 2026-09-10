@@ -1,9 +1,13 @@
 package com.zipdaproperty.domain.file.entity;
 
+import com.zipdaproperty.domain.file.constant.FilePurpose;
+import com.zipdaproperty.domain.file.constant.UploadStatus;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.entity.BaseAuditEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -41,6 +45,23 @@ public class PropertyFile extends BaseAuditEntity {
     )
     private Long ownerMemberId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "file_purpose",
+            nullable = false,
+            updatable = false,
+            length = 30
+    )
+    private FilePurpose filePurpose;
+
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "upload_status",
+            nullable = false,
+            length = 30
+    )
+    private UploadStatus uploadStatus;
+
     @Column(
             name = "original_file_name",
             nullable = false,
@@ -55,6 +76,12 @@ public class PropertyFile extends BaseAuditEntity {
             updatable = false
     )
     private Long fileSize;
+
+    @Column(
+            name = "mime_type",
+            length = 100
+    )
+    private String mimeType;
 
     @Column(
             name = "object_key",
@@ -79,9 +106,22 @@ public class PropertyFile extends BaseAuditEntity {
     )
     private Instant expiresAt;
 
+    @Column(
+            name = "linked_at",
+            columnDefinition = "DATETIME(6)"
+    )
+    private Instant linkedAt;
+
+    @Column(
+            name = "object_deleted_at",
+            columnDefinition = "DATETIME(6)"
+    )
+    private Instant objectDeletedAt;
+
     private PropertyFile(
             Long propertyFileId,
             String uploadSessionId,
+            FilePurpose filePurpose,
             String originalFileName,
             Long fileSize,
             String objectKey,
@@ -92,6 +132,8 @@ public class PropertyFile extends BaseAuditEntity {
         this.propertyFileId = propertyFileId;
         this.uploadSessionId = uploadSessionId;
         this.ownerMemberId = actorContext.memberId();
+        this.filePurpose = filePurpose;
+        this.uploadStatus = UploadStatus.CREATED;
         this.originalFileName = originalFileName;
         this.fileSize = fileSize;
         this.objectKey = objectKey;
@@ -101,6 +143,7 @@ public class PropertyFile extends BaseAuditEntity {
     public static PropertyFile create(
             Long propertyFileId,
             String uploadSessionId,
+            FilePurpose filePurpose,
             String originalFileName,
             Long fileSize,
             String objectKey,
@@ -110,6 +153,7 @@ public class PropertyFile extends BaseAuditEntity {
         return new PropertyFile(
                 propertyFileId,
                 uploadSessionId,
+                filePurpose,
                 originalFileName,
                 fileSize,
                 objectKey,
@@ -120,9 +164,17 @@ public class PropertyFile extends BaseAuditEntity {
 
     public void complete(
             String checksum,
+            String mimeType,
             ActorContext actorContext
     ) {
         this.checksum = checksum;
+        this.mimeType = mimeType;
+        this.uploadStatus = UploadStatus.VERIFIED;
         recordUpdate(actorContext);
+    }
+
+    public boolean isVerificationCompleted() {
+        return uploadStatus == UploadStatus.VERIFIED
+                || uploadStatus == UploadStatus.LINKED;
     }
 }

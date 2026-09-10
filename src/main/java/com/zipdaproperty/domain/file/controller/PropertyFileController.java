@@ -30,7 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 )
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/property-files")
+@RequestMapping("/api/property/files")
 public class PropertyFileController {
 
     private final UploadSessionService uploadSessionService;

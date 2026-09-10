@@ -1,7 +1,9 @@
 package com.zipdaproperty.domain.file.storage;
 
+import com.zipdaproperty.domain.file.constant.FileUploadPolicy;
 import com.zipdaproperty.domain.file.constant.ImageFileType;
 import com.zipdaproperty.global.error.custom.business.FileManagedException;
+import com.zipdaproperty.global.error.custom.business.FileTooLargeException;
 import io.minio.GetObjectArgs;
 import io.minio.GetObjectResponse;
 import io.minio.MinioClient;
@@ -34,6 +36,7 @@ public class MinioObjectVerifier {
                             .object(objectKey)
                             .build()
             );
+            validateObjectSize(stat.size());
 
             try (GetObjectResponse stream = minioClient.getObject(
                     GetObjectArgs.builder()
@@ -43,9 +46,19 @@ public class MinioObjectVerifier {
             )) {
                 return inspectStream(stream, stat.size());
             }
+        } catch (FileTooLargeException exception) {
+            throw exception;
         } catch (Exception exception) {
             throw new FileManagedException(
                     "업로드된 파일을 확인할 수 없습니다."
+            );
+        }
+    }
+
+    private void validateObjectSize(long objectSize) {
+        if (objectSize > FileUploadPolicy.MAX_FILE_SIZE_BYTES) {
+            throw new FileTooLargeException(
+                    "업로드된 파일 크기는 20MB 이하여야 합니다."
             );
         }
     }
@@ -106,6 +119,16 @@ public class MinioObjectVerifier {
                 && unsigned(header[6]) == 0x1A
                 && unsigned(header[7]) == 0x0A) {
             return ImageFileType.PNG;
+        }
+
+        if (headerSize >= 6
+                && header[0] == 'G'
+                && header[1] == 'I'
+                && header[2] == 'F'
+                && header[3] == '8'
+                && (header[4] == '7' || header[4] == '9')
+                && header[5] == 'a') {
+            return ImageFileType.GIF;
         }
 
         if (headerSize >= 12
