@@ -1,5 +1,7 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
+import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.constant.RevisionChangeScope;
 import com.zipdaproperty.domain.property.constant.RevisionChangeType;
@@ -7,6 +9,8 @@ import com.zipdaproperty.domain.property.constant.TransactionStatus;
 import com.zipdaproperty.domain.property.constant.VerificationStatus;
 import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
+import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
+import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.request.PropertyRestoreRequest;
@@ -22,15 +26,19 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.dao.OptimisticLockingFailureException;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.same;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -81,13 +89,23 @@ class PropertyRestoreServiceTest {
     private final ObjectMapper objectMapper =
             mock(ObjectMapper.class);
 
+    private final PropertyAuditEventRecorder
+            propertyAuditEventRecorder =
+            mock(PropertyAuditEventRecorder.class);
+
+    private final PropertyKafkaEventPublisher
+            propertyKafkaEventPublisher =
+            mock(PropertyKafkaEventPublisher.class);
+
     private final PropertyRestoreService propertyRestoreService =
             new PropertyRestoreService(
                     propertyRepository,
                     propertyRevisionRepository,
                     regionRepository,
                     propertyVersionPolicy,
-                    objectMapper
+                    objectMapper,
+                    propertyAuditEventRecorder,
+                    propertyKafkaEventPublisher
             );
 
     private final ActorContext adminContext =
@@ -98,7 +116,7 @@ class PropertyRestoreServiceTest {
             );
 
     @Test
-    void restore_adminAndValidReference_savesPropertyAndRevision() {
+    void restore_adminAndValidReference_savesRevisionAuditAndPublishesKafkaEvent() {
         Property property =
                 prepareDeletedProperty(
                         CURRENT_VERSION
@@ -117,6 +135,8 @@ class PropertyRestoreServiceTest {
                 .thenReturn(
                         CURRENT_VERSION,
                         NEXT_VERSION,
+                        NEXT_VERSION,
+                        NEXT_VERSION,
                         NEXT_VERSION
                 );
 
@@ -134,6 +154,9 @@ class PropertyRestoreServiceTest {
                 .thenReturn(
                         VerificationStatus.UNVERIFIED
                 );
+
+        when(property.getDeletedAt())
+                .thenReturn(null);
 
         when(
                 regionRepository
@@ -257,10 +280,91 @@ class PropertyRestoreServiceTest {
 
         assertThat(savedRevision.getOccurredAt())
                 .isNotNull();
+
+        ArgumentCaptor<Instant> occurredAtCaptor =
+                ArgumentCaptor.forClass(Instant.class);
+
+        verify(propertyAuditEventRecorder)
+                .recordPropertyAction(
+                        eq(PROPERTY_ID),
+                        eq(
+                                PropertyAuditActionCode
+                                        .PROPERTY_RESTORED
+                        ),
+                        eq(RESTORE_REASON),
+                        isNull(),
+                        occurredAtCaptor.capture(),
+                        same(adminContext)
+                );
+
+        assertThat(occurredAtCaptor.getValue())
+                .isEqualTo(savedRevision.getOccurredAt());
+
+        verify(propertyKafkaEventPublisher)
+                .publishAfterCommit(
+                        eq(PROPERTY_ID),
+                        eq(NEXT_VERSION),
+                        eq(
+                                PropertyEventType
+                                        .PROPERTY_REACTIVATED
+                        ),
+                        argThat(
+                                payload ->
+                                        PROPERTY_ID.toString().equals(
+                                                payload.get("propertyId")
+                                        )
+                                                && NEXT_VERSION.equals(
+                                                payload.get("version")
+                                        )
+                                                && payload.containsKey(
+                                                "deletedAt"
+                                        )
+                                                && payload.get(
+                                                "deletedAt"
+                                        ) == null
+                                                && ADMIN_MEMBER_ID
+                                                .toString()
+                                                .equals(
+                                                        payload.get(
+                                                                "restoredByMemberId"
+                                                        )
+                                                )
+                                                && ActorRole.CS_ADMIN
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "restoredByRole"
+                                                        )
+                                                )
+                                                && RESTORE_REASON.equals(
+                                                payload.get(
+                                                        "restoreReason"
+                                                )
+                                        )
+                                                && PublicationStatus
+                                                .IN_REVIEW
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "publicationStatus"
+                                                        )
+                                                )
+                                                && TransactionStatus
+                                                .AVAILABLE
+                                                .name()
+                                                .equals(
+                                                        payload.get(
+                                                                "transactionStatus"
+                                                        )
+                                                )
+                        ),
+                        eq(occurredAtCaptor.getValue()),
+                        same(adminContext)
+                );
     }
 
     @Test
-    void restore_generalUser_throwsForbidden() {
+    void restore_generalUser_throwsForbiddenAndDoesNotRecordEvents() {
         prepareDeletedProperty(
                 CURRENT_VERSION
         );
@@ -311,10 +415,12 @@ class PropertyRestoreServiceTest {
         ).save(
                 any(PropertyRevision.class)
         );
+
+        verifyNoDomainEventsRecorded();
     }
 
     @Test
-    void restore_staleVersion_throwsVersionConflict() {
+    void restore_staleVersion_throwsVersionConflictAndDoesNotRecordEvents() {
         Property property =
                 prepareDeletedProperty(
                         NEXT_VERSION
@@ -366,10 +472,12 @@ class PropertyRestoreServiceTest {
         ).save(
                 any(PropertyRevision.class)
         );
+
+        verifyNoDomainEventsRecorded();
     }
 
     @Test
-    void restore_inactiveRegion_throwsRestoreReferenceInvalid() {
+    void restore_inactiveRegion_throwsReferenceInvalidAndDoesNotRecordEvents() {
         Property property =
                 prepareDeletedProperty(
                         CURRENT_VERSION
@@ -425,10 +533,12 @@ class PropertyRestoreServiceTest {
         ).save(
                 any(PropertyRevision.class)
         );
+
+        verifyNoDomainEventsRecorded();
     }
 
     @Test
-    void restore_optimisticLockFailure_throwsVersionConflict() {
+    void restore_optimisticLockFailure_throwsVersionConflictAndDoesNotRecordEvents() {
         Property property =
                 prepareDeletedProperty(
                         CURRENT_VERSION
@@ -493,6 +603,8 @@ class PropertyRestoreServiceTest {
         ).save(
                 any(PropertyRevision.class)
         );
+
+        verifyNoDomainEventsRecorded();
     }
 
     private Property prepareDeletedProperty(
@@ -510,10 +622,39 @@ class PropertyRestoreServiceTest {
                 Optional.of(property)
         );
 
+        when(property.getPropertyId())
+                .thenReturn(PROPERTY_ID);
+
         when(property.getVersion())
                 .thenReturn(currentVersion);
 
         return property;
+    }
+
+    private void verifyNoDomainEventsRecorded() {
+        verify(
+                propertyAuditEventRecorder,
+                never()
+        ).recordPropertyAction(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        );
+
+        verify(
+                propertyKafkaEventPublisher,
+                never()
+        ).publishAfterCommit(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        );
     }
 
     private PropertyRestoreRequest createRequest(

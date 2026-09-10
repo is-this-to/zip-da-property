@@ -1,7 +1,11 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
+import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
+import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
+import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.request.PropertyDeleteRequest;
@@ -16,7 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 @Service
@@ -39,6 +45,12 @@ public class PropertyDeleteService {
     private final PropertyVersionPolicy propertyVersionPolicy;
 
     private final ObjectMapper objectMapper;
+
+    private final PropertyAuditEventRecorder
+            propertyAuditEventRecorder;
+
+    private final PropertyKafkaEventPublisher
+            propertyKafkaEventPublisher;
 
     @Transactional
     public void delete(
@@ -98,6 +110,13 @@ public class PropertyDeleteService {
         propertyRevisionRepository.save(
                 revision
         );
+
+        recordDeleteEvents(
+                savedProperty,
+                request.deleteReason(),
+                occurredAt,
+                actorContext
+        );
     }
 
     private Property findActiveProperty(
@@ -129,8 +148,10 @@ public class PropertyDeleteService {
             Property property,
             ActorContext actorContext
     ) {
-        if (actorContext == null
-                || !actorContext.isMemberRequest()) {
+        if (
+                actorContext == null
+                        || !actorContext.isMemberRequest()
+        ) {
             throw new BusinessException(
                     CustomResponseCode
                             .PROPERTY_OWNERSHIP_REQUIRED,
@@ -179,5 +200,96 @@ public class PropertyDeleteService {
                     "다른 사용자가 먼저 매물을 변경했습니다."
             );
         }
+    }
+
+    private void recordDeleteEvents(
+            Property property,
+            String deleteReason,
+            Instant occurredAt,
+            ActorContext actorContext
+    ) {
+        propertyAuditEventRecorder.recordPropertyAction(
+                property.getPropertyId(),
+                PropertyAuditActionCode.PROPERTY_SOFT_DELETED,
+                deleteReason,
+                null,
+                occurredAt,
+                actorContext
+        );
+
+        Map<String, Object> kafkaPayload =
+                createPropertyDeletedPayload(
+                        property,
+                        deleteReason
+                );
+
+        propertyKafkaEventPublisher.publishAfterCommit(
+                property.getPropertyId(),
+                property.getVersion(),
+                PropertyEventType.PROPERTY_DELETED,
+                kafkaPayload,
+                occurredAt,
+                actorContext
+        );
+    }
+
+    private Map<String, Object> createPropertyDeletedPayload(
+            Property property,
+            String deleteReason
+    ) {
+        Map<String, Object> payload =
+                new LinkedHashMap<>();
+
+        payload.put(
+                "propertyId",
+                property.getPropertyId().toString()
+        );
+
+        payload.put(
+                "version",
+                property.getVersion()
+        );
+
+        payload.put(
+                "deletedAt",
+                property.getDeletedAt()
+        );
+
+        payload.put(
+                "deletedByMemberId",
+                toStringOrNull(
+                        property.getDeletedByMemberId()
+                )
+        );
+
+        payload.put(
+                "deletedByRole",
+                enumNameOrNull(
+                        property.getDeletedByRole()
+                )
+        );
+
+        payload.put(
+                "deleteReason",
+                deleteReason
+        );
+
+        return payload;
+    }
+
+    private String toStringOrNull(Long value) {
+        if (value == null) {
+            return null;
+        }
+
+        return value.toString();
+    }
+
+    private String enumNameOrNull(Enum<?> value) {
+        if (value == null) {
+            return null;
+        }
+
+        return value.name();
     }
 }

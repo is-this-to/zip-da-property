@@ -1,7 +1,11 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
+import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
+import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
+import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.request.PropertyRestoreRequest;
@@ -18,7 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -42,6 +48,12 @@ public class PropertyRestoreService {
     private final PropertyVersionPolicy propertyVersionPolicy;
 
     private final ObjectMapper objectMapper;
+
+    private final PropertyAuditEventRecorder
+            propertyAuditEventRecorder;
+
+    private final PropertyKafkaEventPublisher
+            propertyKafkaEventPublisher;
 
     @Transactional
     public PropertyRestoreResponse restore(
@@ -97,6 +109,13 @@ public class PropertyRestoreService {
                 revision
         );
 
+        recordRestoreEvents(
+                savedProperty,
+                request.restoreReason(),
+                occurredAt,
+                actorContext
+        );
+
         return PropertyRestoreResponse.from(
                 savedProperty
         );
@@ -130,8 +149,10 @@ public class PropertyRestoreService {
     private void validateRestorePermission(
             ActorContext actorContext
     ) {
-        if (actorContext == null
-                || !actorContext.isMemberRequest()) {
+        if (
+                actorContext == null
+                        || !actorContext.isMemberRequest()
+        ) {
             throw new BusinessException(
                     CustomResponseCode.FORBIDDEN,
                     "회원 관리자 요청만 매물을 복구할 수 있습니다."
@@ -192,5 +213,112 @@ public class PropertyRestoreService {
                     "다른 사용자가 먼저 매물을 변경했습니다."
             );
         }
+    }
+
+    private void recordRestoreEvents(
+            Property property,
+            String restoreReason,
+            Instant occurredAt,
+            ActorContext actorContext
+    ) {
+        propertyAuditEventRecorder.recordPropertyAction(
+                property.getPropertyId(),
+                PropertyAuditActionCode.PROPERTY_RESTORED,
+                restoreReason,
+                null,
+                occurredAt,
+                actorContext
+        );
+
+        Map<String, Object> kafkaPayload =
+                createPropertyReactivatedPayload(
+                        property,
+                        restoreReason,
+                        actorContext
+                );
+
+        propertyKafkaEventPublisher.publishAfterCommit(
+                property.getPropertyId(),
+                property.getVersion(),
+                PropertyEventType.PROPERTY_REACTIVATED,
+                kafkaPayload,
+                occurredAt,
+                actorContext
+        );
+    }
+
+    private Map<String, Object> createPropertyReactivatedPayload(
+            Property property,
+            String restoreReason,
+            ActorContext actorContext
+    ) {
+        Map<String, Object> payload =
+                new LinkedHashMap<>();
+
+        payload.put(
+                "propertyId",
+                property.getPropertyId().toString()
+        );
+
+        payload.put(
+                "version",
+                property.getVersion()
+        );
+
+        payload.put(
+                "deletedAt",
+                property.getDeletedAt()
+        );
+
+        payload.put(
+                "restoredByMemberId",
+                toStringOrNull(
+                        actorContext.memberId()
+                )
+        );
+
+        payload.put(
+                "restoredByRole",
+                enumNameOrNull(
+                        actorContext.role()
+                )
+        );
+
+        payload.put(
+                "restoreReason",
+                restoreReason
+        );
+
+        payload.put(
+                "publicationStatus",
+                enumNameOrNull(
+                        property.getPublicationStatus()
+                )
+        );
+
+        payload.put(
+                "transactionStatus",
+                enumNameOrNull(
+                        property.getTransactionStatus()
+                )
+        );
+
+        return payload;
+    }
+
+    private String toStringOrNull(Long value) {
+        if (value == null) {
+            return null;
+        }
+
+        return value.toString();
+    }
+
+    private String enumNameOrNull(Enum<?> value) {
+        if (value == null) {
+            return null;
+        }
+
+        return value.name();
     }
 }

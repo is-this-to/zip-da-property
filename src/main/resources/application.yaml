@@ -44,10 +44,17 @@ spring:
   # kafka
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
     consumer:
       group-id: zip-da-property
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       # 아래에 추가설정 필요
+
+property:
+  kafka:
+    topic: ${PROPERTY_KAFKA_TOPIC:zipda.property.events.v1}
 
 # Springdoc Openapi
 springdoc:
