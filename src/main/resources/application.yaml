@@ -95,3 +95,12 @@ external-api:
     connect-timeout: ${KAKAO_LOCAL_CONNECT_TIMEOUT:3s}
     read-timeout: ${KAKAO_LOCAL_READ_TIMEOUT:5s}
     page-size: ${KAKAO_LOCAL_PAGE_SIZE:10}
+
+# 매물 위치 검증 설정
+property:
+  location:
+    validation:
+      min-longitude: ${PROPERTY_LOCATION_MIN_LONGITUDE:124}
+      max-longitude: ${PROPERTY_LOCATION_MAX_LONGITUDE:132}
+      min-latitude: ${PROPERTY_LOCATION_MIN_LATITUDE:33}
+      max-latitude: ${PROPERTY_LOCATION_MAX_LATITUDE:39}
