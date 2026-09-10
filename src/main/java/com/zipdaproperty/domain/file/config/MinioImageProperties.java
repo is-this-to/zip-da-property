@@ -7,6 +7,8 @@ import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.stream.Stream;
 
 @Validated
 @ConfigurationProperties(prefix = "minio")
@@ -23,17 +25,35 @@ public record MinioImageProperties(
     }
 
     public boolean allowsFileExtension(String extension) {
+        return findMimeTypeForFileExtension(extension).isPresent();
+    }
+
+    public Optional<String> findMimeTypeForFileExtension(String extension) {
         if (extension == null) {
-            return false;
+            return Optional.empty();
         }
 
         String normalizedExtension = extension.toLowerCase(Locale.ROOT);
-        return allowImageExtensions.stream()
-                .map(MinioImageProperties::extractImageSubtype)
-                .anyMatch(subtype -> matchesExtension(
-                        subtype,
+        Optional<String> exactMimeType = normalizedMimeTypes()
+                .filter(mimeType -> extractImageSubtype(mimeType)
+                        .equals(normalizedExtension))
+                .findFirst();
+        if (exactMimeType.isPresent()) {
+            return exactMimeType;
+        }
+
+        return normalizedMimeTypes()
+                .filter(mimeType -> matchesExtension(
+                        extractImageSubtype(mimeType),
                         normalizedExtension
-                ));
+                ))
+                .findFirst();
+    }
+
+    private Stream<String> normalizedMimeTypes() {
+        return allowImageExtensions.stream()
+                .map(String::trim)
+                .map(mimeType -> mimeType.toLowerCase(Locale.ROOT));
     }
 
     private static String extractImageSubtype(String mimeType) {

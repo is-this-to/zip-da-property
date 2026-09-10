@@ -36,6 +36,16 @@ class MinioImagePropertiesTest {
 
         assertThat(List.of("jpg", "jpeg", "png", "gif", "webp"))
                 .allMatch(properties::allowsFileExtension);
+        assertThat(properties.findMimeTypeForFileExtension("jpg"))
+                .contains("image/jpg");
+        assertThat(properties.findMimeTypeForFileExtension("jpeg"))
+                .contains("image/jpeg");
+        assertThat(properties.findMimeTypeForFileExtension("png"))
+                .contains("image/png");
+        assertThat(properties.findMimeTypeForFileExtension("gif"))
+                .contains("image/gif");
+        assertThat(properties.findMimeTypeForFileExtension("webp"))
+                .contains("image/webp");
         assertThat(properties.allowsFileExtension("bmp")).isFalse();
     }
 }

@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.file.request;
 
+import com.zipdaproperty.domain.file.constant.FilePurpose;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -8,6 +9,9 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 public record UploadSessionCreateRequest(
+
+        @NotNull(message = "파일 용도는 필수입니다.")
+        FilePurpose filePurpose,
 
         @NotEmpty(message = "파일 목록은 필수입니다.")
         @Size(

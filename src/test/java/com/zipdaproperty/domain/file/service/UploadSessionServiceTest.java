@@ -1,7 +1,9 @@
 package com.zipdaproperty.domain.file.service;
 
 import com.zipdaproperty.domain.file.config.MinioImageProperties;
+import com.zipdaproperty.domain.file.constant.FilePurpose;
 import com.zipdaproperty.domain.file.constant.FileUploadPolicy;
+import com.zipdaproperty.domain.file.constant.UploadStatus;
 import com.zipdaproperty.domain.file.entity.PropertyFile;
 import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
 import com.zipdaproperty.domain.file.request.UploadFileRequest;
@@ -168,7 +170,10 @@ class UploadSessionServiceTest {
 
     @Test
     void create_emptyFiles_throwsInvalidRequestException() {
-        assertInvalidRequest(new UploadSessionCreateRequest(List.of()));
+        assertInvalidRequest(new UploadSessionCreateRequest(
+                FilePurpose.PROPERTY_IMAGE,
+                List.of()
+        ));
     }
 
     @Test
@@ -178,7 +183,10 @@ class UploadSessionServiceTest {
             files.add(new UploadFileRequest("photo-" + index + ".jpg", 1L));
         }
 
-        assertInvalidRequest(new UploadSessionCreateRequest(files));
+        assertInvalidRequest(new UploadSessionCreateRequest(
+                FilePurpose.PROPERTY_IMAGE,
+                files
+        ));
     }
 
     @Test
@@ -195,6 +203,49 @@ class UploadSessionServiceTest {
         PropertyFile savedFile = filesCaptor.getValue().getFirst();
         assertThat(savedFile.getPropertyFileId()).isEqualTo(FILE_ID);
         assertThat(savedFile.getOwnerMemberId()).isEqualTo(OWNER_MEMBER_ID);
+        assertThat(savedFile.getFilePurpose())
+                .isEqualTo(FilePurpose.PROPERTY_IMAGE);
+        assertThat(savedFile.getUploadStatus())
+                .isEqualTo(UploadStatus.CREATED);
+        assertThat(savedFile.getMimeType()).isNull();
+        assertThat(savedFile.getLinkedAt()).isNull();
+        assertThat(savedFile.getObjectDeletedAt()).isNull();
+    }
+
+    @Test
+    void create_nullFilePurpose_throwsInvalidRequestException() {
+        assertInvalidRequest(new UploadSessionCreateRequest(
+                null,
+                List.of(new UploadFileRequest("photo.jpg", 1024L))
+        ));
+    }
+
+    @Test
+    void create_multipleFiles_storesSameRequestedPurposeAndCreatedStatus() {
+        when(tsidGenerator.generate()).thenReturn(FILE_ID, FILE_ID + 1);
+        service.create(
+                new UploadSessionCreateRequest(
+                        FilePurpose.REPORT_EVIDENCE,
+                        List.of(
+                                new UploadFileRequest("first.jpg", 1024L),
+                                new UploadFileRequest("second.png", 2048L)
+                        )
+                ),
+                ACTOR_CONTEXT
+        );
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PropertyFile>> filesCaptor =
+                ArgumentCaptor.forClass(List.class);
+        verify(propertyFileRepository).saveAll(filesCaptor.capture());
+        assertThat(filesCaptor.getValue())
+                .hasSize(2)
+                .allSatisfy(propertyFile -> {
+                    assertThat(propertyFile.getFilePurpose())
+                            .isEqualTo(FilePurpose.REPORT_EVIDENCE);
+                    assertThat(propertyFile.getUploadStatus())
+                            .isEqualTo(UploadStatus.CREATED);
+                });
     }
 
     @Test
@@ -224,6 +275,7 @@ class UploadSessionServiceTest {
             long fileSize
     ) {
         return new UploadSessionCreateRequest(
+                FilePurpose.PROPERTY_IMAGE,
                 List.of(new UploadFileRequest(fileName, fileSize))
         );
     }

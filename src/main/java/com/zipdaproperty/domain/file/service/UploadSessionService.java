@@ -1,6 +1,7 @@
 package com.zipdaproperty.domain.file.service;
 
 import com.zipdaproperty.domain.file.config.MinioImageProperties;
+import com.zipdaproperty.domain.file.constant.FilePurpose;
 import com.zipdaproperty.domain.file.constant.FileUploadPolicy;
 import com.zipdaproperty.domain.file.entity.PropertyFile;
 import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
@@ -49,6 +50,7 @@ public class UploadSessionService {
             ActorContext actorContext
     ) {
         List<UploadFileRequest> requestedFiles = validateRequest(request);
+        FilePurpose filePurpose = request.filePurpose();
         String uploadSessionId = UUID.randomUUID().toString();
         Instant expiresAt = Instant.now().plus(UPLOAD_SESSION_TTL);
 
@@ -73,6 +75,7 @@ public class UploadSessionService {
             propertyFiles.add(PropertyFile.create(
                     fileId,
                     uploadSessionId,
+                    filePurpose,
                     originalFileName,
                     requestedFile.size(),
                     objectKey,
@@ -106,8 +109,13 @@ public class UploadSessionService {
     private List<UploadFileRequest> validateRequest(
             UploadSessionCreateRequest request
     ) {
-        if (request == null
-                || request.files() == null
+        if (request == null || request.filePurpose() == null) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_REQUEST,
+                    "파일 용도는 필수입니다."
+            );
+        }
+        if (request.files() == null
                 || request.files().isEmpty()
                 || request.files().size() > MAX_FILE_COUNT) {
             throw new BusinessException(
