@@ -61,6 +61,12 @@ public enum CustomResponseCode {
             "P18"
     ),
 
+    // 매물 위치 검증 관련
+    PROPERTY_REGION_NOT_FOUND(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P19"
+    ),
+
     // Property 멱등 요청 관련
     IDEMPOTENCY_KEY_REQUIRED(
             HttpStatus.BAD_REQUEST,
@@ -73,6 +79,16 @@ public enum CustomResponseCode {
     IDEMPOTENCY_REQUEST_IN_PROGRESS(
             HttpStatus.CONFLICT,
             "P22"
+    ),
+
+    // 매물 위치 검증 관련
+    PROPERTY_REGION_BOUNDARY_NOT_FOUND(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P23"
+    ),
+    PROPERTY_LOCATION_REGION_MISMATCH(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P24"
     ),
 
     // 파일 처리 관련

@@ -1,8 +1,8 @@
 package com.zipdaproperty.domain.location.client;
 
 import com.zipdaproperty.domain.location.client.response.KakaoAddressSearchApiResponse;
-import com.zipdaproperty.domain.location.exception.KakaoLocalApiException;
 import com.zipdaproperty.global.config.external.KakaoLocalProperties;
+import com.zipdaproperty.global.error.custom.business.KakaoLocalApiException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatusCode;
