@@ -1,11 +1,8 @@
 package com.zipdaproperty.domain.file.service;
 
+import com.zipdaproperty.domain.file.constant.FileUploadPolicy;
 import com.zipdaproperty.domain.file.constant.ImageFileType;
 import com.zipdaproperty.domain.file.entity.PropertyFile;
-import com.zipdaproperty.domain.file.exception.FileOwnershipRequiredException;
-import com.zipdaproperty.domain.file.exception.FileTooLargeException;
-import com.zipdaproperty.domain.file.exception.InvalidFileTypeException;
-import com.zipdaproperty.domain.file.exception.UploadSessionExpiredException;
 import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
 import com.zipdaproperty.domain.file.request.PropertyFileCompleteRequest;
 import com.zipdaproperty.domain.file.response.PropertyFileCompleteResponse;
@@ -13,7 +10,11 @@ import com.zipdaproperty.domain.file.storage.MinioObjectVerification;
 import com.zipdaproperty.domain.file.storage.MinioObjectVerifier;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.error.custom.BusinessException;
+import com.zipdaproperty.global.error.custom.business.FileOwnershipRequiredException;
+import com.zipdaproperty.global.error.custom.business.FileTooLargeException;
+import com.zipdaproperty.global.error.custom.business.InvalidFileTypeException;
 import com.zipdaproperty.global.error.custom.business.NotFoundResourceException;
+import com.zipdaproperty.global.error.custom.business.UploadSessionExpiredException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -109,7 +110,7 @@ public class PropertyFileCompleteService {
         if (requestSize == null || requestSize <= 0) {
             throw invalidRequest("파일 크기는 0보다 커야 합니다.");
         }
-        if (requestSize > UploadSessionService.MAX_FILE_SIZE_BYTES) {
+        if (requestSize > FileUploadPolicy.MAX_FILE_SIZE_BYTES) {
             throw new FileTooLargeException(
                     "파일 크기는 20MB 이하여야 합니다."
             );
@@ -125,11 +126,6 @@ public class PropertyFileCompleteService {
             long actualSize,
             long requestSize
     ) {
-        if (actualSize > UploadSessionService.MAX_FILE_SIZE_BYTES) {
-            throw new FileTooLargeException(
-                    "업로드된 파일 크기는 20MB 이하여야 합니다."
-            );
-        }
         if (actualSize != requestSize) {
             throw invalidRequest(
                     "업로드된 파일 크기가 요청값과 일치하지 않습니다."
@@ -162,6 +158,7 @@ public class PropertyFileCompleteService {
                 .toLowerCase(Locale.ROOT)) {
             case "jpg", "jpeg" -> ImageFileType.JPEG;
             case "png" -> ImageFileType.PNG;
+            case "gif" -> ImageFileType.GIF;
             case "webp" -> ImageFileType.WEBP;
             default -> ImageFileType.UNKNOWN;
         };

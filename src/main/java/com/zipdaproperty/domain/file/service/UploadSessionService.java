@@ -1,8 +1,8 @@
 package com.zipdaproperty.domain.file.service;
 
+import com.zipdaproperty.domain.file.config.MinioImageProperties;
+import com.zipdaproperty.domain.file.constant.FileUploadPolicy;
 import com.zipdaproperty.domain.file.entity.PropertyFile;
-import com.zipdaproperty.domain.file.exception.FileTooLargeException;
-import com.zipdaproperty.domain.file.exception.InvalidFileTypeException;
 import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
 import com.zipdaproperty.domain.file.request.UploadFileRequest;
 import com.zipdaproperty.domain.file.request.UploadSessionCreateRequest;
@@ -11,6 +11,8 @@ import com.zipdaproperty.domain.file.response.UploadSessionFileResponse;
 import com.zipdaproperty.domain.file.storage.MinioPresignedUploadUrlGenerator;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.error.custom.BusinessException;
+import com.zipdaproperty.global.error.custom.business.FileTooLargeException;
+import com.zipdaproperty.global.error.custom.business.InvalidFileTypeException;
 import com.zipdaproperty.global.id.TsidGenerator;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +26,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -32,19 +33,12 @@ import java.util.UUID;
 public class UploadSessionService {
 
     static final Duration UPLOAD_SESSION_TTL = Duration.ofMinutes(15);
-    static final long MAX_FILE_SIZE_BYTES = 20L * 1024L * 1024L;
     static final int MAX_FILE_COUNT = 30;
-
-    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
-            "jpg",
-            "jpeg",
-            "png",
-            "webp"
-    );
 
     private final PropertyFileRepository propertyFileRepository;
     private final TsidGenerator tsidGenerator;
     private final MinioPresignedUploadUrlGenerator uploadUrlGenerator;
+    private final MinioImageProperties minioImageProperties;
 
     @Value("${minio.minio-image-path}")
     private String minioImagePath;
@@ -153,9 +147,9 @@ public class UploadSessionService {
 
         String extension = fileName.substring(extensionSeparator + 1)
                 .toLowerCase(Locale.ROOT);
-        if (!ALLOWED_EXTENSIONS.contains(extension)) {
+        if (!minioImageProperties.allowsFileExtension(extension)) {
             throw new InvalidFileTypeException(
-                    "JPEG, PNG, WebP 파일만 업로드할 수 있습니다."
+                    "JPEG, PNG, GIF, WebP 파일만 업로드할 수 있습니다."
             );
         }
         return extension;
@@ -168,7 +162,7 @@ public class UploadSessionService {
                     "파일 크기는 0보다 커야 합니다."
             );
         }
-        if (fileSize > MAX_FILE_SIZE_BYTES) {
+        if (fileSize > FileUploadPolicy.MAX_FILE_SIZE_BYTES) {
             throw new FileTooLargeException(
                     "파일 크기는 20MB 이하여야 합니다."
             );
