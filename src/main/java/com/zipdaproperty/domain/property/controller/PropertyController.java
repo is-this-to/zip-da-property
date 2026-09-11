@@ -3,14 +3,17 @@ package com.zipdaproperty.domain.property.controller;
 import com.zipdaproperty.domain.property.idempotency.service.PropertyIdempotencyService;
 import com.zipdaproperty.domain.property.request.PropertyCreateRequest;
 import com.zipdaproperty.domain.property.request.PropertyDeleteRequest;
+import com.zipdaproperty.domain.property.request.PropertyPublicationStatusChangeRequest;
 import com.zipdaproperty.domain.property.request.PropertyRestoreRequest;
 import com.zipdaproperty.domain.property.request.PropertyTransactionStatusChangeRequest;
 import com.zipdaproperty.domain.property.request.PropertyUpdateRequest;
 import com.zipdaproperty.domain.property.response.PropertyCreateResponse;
+import com.zipdaproperty.domain.property.response.PropertyPublicationStatusChangeResponse;
 import com.zipdaproperty.domain.property.response.PropertyRestoreResponse;
 import com.zipdaproperty.domain.property.response.PropertyTransactionStatusChangeResponse;
 import com.zipdaproperty.domain.property.response.PropertyUpdateResponse;
 import com.zipdaproperty.domain.property.service.PropertyDeleteService;
+import com.zipdaproperty.domain.property.service.PropertyPublicationStatusChangeService;
 import com.zipdaproperty.domain.property.service.PropertyRestoreService;
 import com.zipdaproperty.domain.property.service.PropertyTransactionStatusChangeService;
 import com.zipdaproperty.domain.property.service.PropertyUpdateService;
@@ -54,6 +57,9 @@ public class PropertyController {
 
     private final PropertyTransactionStatusChangeService
             propertyTransactionStatusChangeService;
+
+    private final PropertyPublicationStatusChangeService
+            propertyPublicationStatusChangeService;
 
     private final PropertyDeleteService propertyDeleteService;
 
@@ -282,6 +288,89 @@ public class PropertyController {
 
         PropertyTransactionStatusChangeResponse response =
                 propertyTransactionStatusChangeService.change(
+                        propertyId,
+                        request,
+                        actorContext
+                );
+
+        return ResponseEntity.ok(
+                GlobalResponseDTO.success(response)
+        );
+    }
+
+    @Operation(
+            summary = "매물 공개 상태 변경",
+            description = """
+                    매물의 검수 승인·거절·재신청·숨김·재공개를 처리합니다.
+                    검수 승인과 거절은 관리자만 수행할 수 있고,
+                    거절된 매물의 재신청은 작성자만 수행할 수 있습니다.
+                    숨김과 재공개는 작성자 또는 허용된 관리자가 수행합니다.
+                    재공개는 거래 상태가 AVAILABLE인 경우에만 허용됩니다.
+                    If-Match 헤더와 요청 본문의 version은
+                    반드시 동일해야 합니다.
+                    """
+    )
+    @CustomApiResponse({
+            CustomResponseCode.UNAUTHENTICATED,
+            CustomResponseCode.FORBIDDEN,
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.INVALID_STATUS_TRANSITION,
+            CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.PROPERTY_NOT_FOUND,
+            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+            CustomResponseCode.DB_ERROR,
+            CustomResponseCode.SYSTEM_ERROR
+    })
+    @PreAuthorize(
+            "hasAnyRole("
+                    + "'USER', "
+                    + "'AGENT', "
+                    + "'CS_ADMIN', "
+                    + "'SUPER_ADMIN'"
+                    + ")"
+    )
+    @PatchMapping("/{propertyId}/publication-status")
+    public ResponseEntity<
+            GlobalResponseDTO<
+                    PropertyPublicationStatusChangeResponse
+                    >
+            >
+    changePublicationStatus(
+            @Parameter(
+                    description = "공개 상태를 변경할 매물 ID",
+                    required = true,
+                    example = "884685586571263701"
+            )
+            @PathVariable
+            Long propertyId,
+
+            @Parameter(
+                    description = "마지막으로 조회한 매물 version",
+                    required = true,
+                    example = "\"1\""
+            )
+            @RequestHeader(
+                    name = "If-Match",
+                    required = false
+            )
+            String ifMatch,
+
+            @Valid
+            @RequestBody
+            PropertyPublicationStatusChangeRequest request,
+
+            @Parameter(hidden = true)
+            ActorContext actorContext
+    ) {
+        Long ifMatchVersion = parseIfMatch(ifMatch);
+
+        validateVersionAgreement(
+                ifMatchVersion,
+                request.version()
+        );
+
+        PropertyPublicationStatusChangeResponse response =
+                propertyPublicationStatusChangeService.change(
                         propertyId,
                         request,
                         actorContext

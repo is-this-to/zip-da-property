@@ -294,6 +294,20 @@ public class Property extends BaseAuditEntity {
         recordUpdate(actorContext);
     }
 
+    public void changePublicationStatus(
+            PublicationStatus targetStatus,
+            ActorContext actorContext,
+            Instant occurredAt
+    ) {
+        this.publicationStatus = targetStatus;
+
+        if (targetStatus == PublicationStatus.PUBLISHED) {
+            this.publishedAt = occurredAt;
+        }
+
+        recordUpdate(actorContext);
+    }
+
     public void changeVerificationStatus(
             VerificationStatus targetStatus,
             ActorContext actorContext
