@@ -24,9 +24,19 @@ public record PropertyUpdateResponse(
     public static PropertyUpdateResponse from(
             Property property
     ) {
+        return from(
+                property,
+                property.getVersion()
+        );
+    }
+
+    public static PropertyUpdateResponse from(
+            Property property,
+            Long version
+    ) {
         return new PropertyUpdateResponse(
                 property.getPropertyId(),
-                property.getVersion(),
+                version,
                 property.getPublicationStatus(),
                 property.getTransactionStatus(),
                 property.getVerificationStatus()

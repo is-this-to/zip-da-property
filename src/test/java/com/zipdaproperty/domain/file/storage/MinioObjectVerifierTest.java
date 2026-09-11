@@ -3,6 +3,7 @@ package com.zipdaproperty.domain.file.storage;
 import com.zipdaproperty.domain.file.constant.ImageFileType;
 import com.zipdaproperty.domain.file.constant.FileUploadPolicy;
 import com.zipdaproperty.global.error.custom.business.FileTooLargeException;
+import com.zipdaproperty.global.error.custom.business.FileManagedException;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.StatObjectArgs;
@@ -75,5 +76,56 @@ class MinioObjectVerifierTest {
 
         assertThat(verification.imageFileType())
                 .isEqualTo(ImageFileType.UNKNOWN);
+    }
+
+    @Test
+    void verify_statObjectFailure_wrapsAsFileManagedException() throws Exception {
+        when(minioClient.statObject(any(StatObjectArgs.class)))
+                .thenThrow(new RuntimeException("stat failed"));
+
+        assertThatThrownBy(() -> verifier.verify("opaque-test-value"))
+                .isInstanceOf(FileManagedException.class);
+
+        verify(minioClient, never()).getObject(any(GetObjectArgs.class));
+    }
+
+    @Test
+    void verify_getObjectFailure_wrapsAsFileManagedException() throws Exception {
+        StatObjectResponse stat = mock(StatObjectResponse.class);
+        when(stat.size()).thenReturn(10L);
+        when(minioClient.statObject(any(StatObjectArgs.class))).thenReturn(stat);
+        when(minioClient.getObject(any(GetObjectArgs.class)))
+                .thenThrow(new RuntimeException("get failed"));
+
+        assertThatThrownBy(() -> verifier.verify("opaque-test-value"))
+                .isInstanceOf(FileManagedException.class);
+    }
+
+    @Test
+    void inspectStream_jpegMagicNumber_detectsJpeg() throws Exception {
+        assertImageType(new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF},
+                ImageFileType.JPEG);
+    }
+
+    @Test
+    void inspectStream_pngMagicNumber_detectsPng() throws Exception {
+        assertImageType(new byte[]{
+                (byte) 0x89, 0x50, 0x4E, 0x47,
+                0x0D, 0x0A, 0x1A, 0x0A
+        }, ImageFileType.PNG);
+    }
+
+    @Test
+    void inspectStream_webpMagicNumber_detectsWebp() throws Exception {
+        assertImageType("RIFF0000WEBP".getBytes(StandardCharsets.US_ASCII),
+                ImageFileType.WEBP);
+    }
+
+    private void assertImageType(byte[] content, ImageFileType expected)
+            throws Exception {
+        MinioObjectVerification verification = verifier.inspectStream(
+                new ByteArrayInputStream(content), content.length
+        );
+        assertThat(verification.imageFileType()).isEqualTo(expected);
     }
 }

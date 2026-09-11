@@ -11,6 +11,7 @@ import com.zipdaproperty.global.id.TsidString;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 public record PropertyEditDetailResponse(
 
@@ -73,12 +74,15 @@ public record PropertyEditDetailResponse(
 
         TransactionStatus transactionStatus,
 
-        VerificationStatus verificationStatus
+        VerificationStatus verificationStatus,
+
+        List<PropertyEditImageResponse> images
 
 ) {
 
     public static PropertyEditDetailResponse from(
-            Property property
+            Property property,
+            List<PropertyEditImageResponse> images
     ) {
         return new PropertyEditDetailResponse(
                 property.getPropertyId(),
@@ -109,7 +113,8 @@ public record PropertyEditDetailResponse(
                 property.getDescription(),
                 property.getPublicationStatus(),
                 property.getTransactionStatus(),
-                property.getVerificationStatus()
+                property.getVerificationStatus(),
+                List.copyOf(images)
         );
     }
 }

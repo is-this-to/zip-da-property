@@ -13,6 +13,9 @@ import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.error.custom.business.InvalidFileTypeException;
+import com.zipdaproperty.global.error.custom.business.FileOwnershipRequiredException;
+import com.zipdaproperty.global.error.custom.business.NotFoundResourceException;
+import com.zipdaproperty.global.error.custom.business.UnauthenticatedException;
 import com.zipdaproperty.global.error.custom.business.UploadSessionExpiredException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +37,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class PropertyFileCompleteServiceTest {
@@ -255,6 +259,86 @@ class PropertyFileCompleteServiceTest {
         verifyCompleteWasNotCalled();
         assertThat(propertyFile.getUploadStatus())
                 .isEqualTo(UploadStatus.CREATED);
+    }
+
+    @Test
+    void complete_nullActorContext_throwsUnauthenticatedWithoutQuery() {
+        assertThatThrownBy(() -> service.complete(
+                FILE_ID,
+                new PropertyFileCompleteRequest(CHECKSUM, FILE_SIZE),
+                null
+        )).isInstanceOf(UnauthenticatedException.class);
+
+        verifyNoInteractions(propertyFileRepository, minioObjectVerifier);
+    }
+
+    @Test
+    void complete_otherOwner_throwsOwnershipRequired() {
+        ActorContext other = ActorContext.member(
+                999L, ActorRole.USER, "other-file-owner-test"
+        );
+
+        assertThatThrownBy(() -> service.complete(
+                FILE_ID,
+                new PropertyFileCompleteRequest(CHECKSUM, FILE_SIZE),
+                other
+        )).isInstanceOf(FileOwnershipRequiredException.class);
+
+        verifyNoInteractions(minioObjectVerifier);
+        verify(propertyFileRepository, never()).save(any(PropertyFile.class));
+    }
+
+    @Test
+    void complete_missingOrDeletedFile_throwsNotFound() {
+        when(propertyFileRepository.findByPropertyFileIdAndDeletedAtIsNull(FILE_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.complete(
+                FILE_ID,
+                new PropertyFileCompleteRequest(CHECKSUM, FILE_SIZE),
+                ACTOR_CONTEXT
+        )).isInstanceOf(NotFoundResourceException.class);
+
+        verifyNoInteractions(minioObjectVerifier);
+    }
+
+    @Test
+    void complete_actualSizeMismatch_throwsInvalidRequest() {
+        when(minioObjectVerifier.verify("opaque-test-value"))
+                .thenReturn(new MinioObjectVerification(
+                        FILE_SIZE + 1, CHECKSUM, ImageFileType.GIF
+                ));
+
+        assertInvalidRequest(new PropertyFileCompleteRequest(CHECKSUM, FILE_SIZE));
+        verify(propertyFileRepository, never()).save(any(PropertyFile.class));
+    }
+
+    @Test
+    void complete_actualChecksumMismatch_throwsInvalidRequest() {
+        when(minioObjectVerifier.verify("opaque-test-value"))
+                .thenReturn(new MinioObjectVerification(
+                        FILE_SIZE, "b".repeat(64), ImageFileType.GIF
+                ));
+
+        assertInvalidRequest(new PropertyFileCompleteRequest(CHECKSUM, FILE_SIZE));
+        verify(propertyFileRepository, never()).save(any(PropertyFile.class));
+    }
+
+    @Test
+    void complete_uppercaseChecksum_normalizesAndCompletes() {
+        String uppercaseChecksum = "A".repeat(64);
+        when(minioObjectVerifier.verify("opaque-test-value"))
+                .thenReturn(new MinioObjectVerification(
+                        FILE_SIZE, CHECKSUM, ImageFileType.GIF
+                ));
+
+        service.complete(
+                FILE_ID,
+                new PropertyFileCompleteRequest(uppercaseChecksum, FILE_SIZE),
+                ACTOR_CONTEXT
+        );
+
+        verify(propertyFile).complete(CHECKSUM, "image/gif", ACTOR_CONTEXT);
     }
 
     private void prepareCompletedFile(

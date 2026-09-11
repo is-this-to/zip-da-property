@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.image.service.PropertyImageDeletionService;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.constant.RevisionChangeScope;
@@ -78,6 +79,9 @@ class PropertyDeleteServiceTest {
     private final PropertyVersionPolicy propertyVersionPolicy =
             new PropertyVersionPolicy();
 
+    private final PropertyImageDeletionService propertyImageDeletionService =
+            mock(PropertyImageDeletionService.class);
+
     private final ObjectMapper objectMapper =
             mock(ObjectMapper.class);
 
@@ -94,6 +98,7 @@ class PropertyDeleteServiceTest {
                     propertyRepository,
                     propertyRevisionRepository,
                     propertyVersionPolicy,
+                    propertyImageDeletionService,
                     objectMapper,
                     propertyAuditEventRecorder,
                     propertyKafkaEventPublisher
@@ -143,6 +148,12 @@ class PropertyDeleteServiceTest {
                         occurredAtCaptor.capture(),
                         eq(DELETE_REASON)
                 );
+
+        verify(propertyImageDeletionService).deleteAllForProperty(
+                PROPERTY_ID,
+                ownerContext,
+                occurredAtCaptor.getValue()
+        );
 
         verify(propertyRepository)
                 .saveAndFlush(property);

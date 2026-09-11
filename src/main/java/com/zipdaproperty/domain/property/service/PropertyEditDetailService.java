@@ -1,8 +1,16 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.file.constant.FilePurpose;
+import com.zipdaproperty.domain.file.constant.UploadStatus;
+import com.zipdaproperty.domain.file.entity.PropertyFile;
+import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
+import com.zipdaproperty.domain.file.storage.MinioPresignedGetUrlGenerator;
+import com.zipdaproperty.domain.image.entity.PropertyImage;
+import com.zipdaproperty.domain.image.repository.PropertyImageRepository;
 import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.response.PropertyEditDetailResponse;
+import com.zipdaproperty.domain.property.response.PropertyEditImageResponse;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
@@ -11,13 +19,20 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class PropertyEditDetailService {
 
     private final PropertyRepository propertyRepository;
+    private final PropertyImageRepository propertyImageRepository;
+    private final PropertyFileRepository propertyFileRepository;
+    private final MinioPresignedGetUrlGenerator getUrlGenerator;
 
     @Transactional(readOnly = true)
     public PropertyEditDetailResponse getEditDetail(
@@ -31,7 +46,62 @@ public class PropertyEditDetailService {
                 actorContext
         );
 
-        return PropertyEditDetailResponse.from(property);
+        return PropertyEditDetailResponse.from(
+                property,
+                findActiveImages(propertyId)
+        );
+    }
+
+    private List<PropertyEditImageResponse> findActiveImages(
+            Long propertyId
+    ) {
+        List<PropertyImage> images = propertyImageRepository
+                .findAllByPropertyIdAndDeletedAtIsNullOrderBySortOrderAsc(
+                        propertyId
+        );
+        if (images.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> fileIds = images.stream()
+                .map(PropertyImage::getPropertyFileId)
+                .toList();
+        Map<Long, PropertyFile> activeFiles = propertyFileRepository
+                .findAllByPropertyFileIdInAndDeletedAtIsNull(fileIds)
+                .stream()
+                .collect(Collectors.toMap(
+                        PropertyFile::getPropertyFileId,
+                        Function.identity()
+                ));
+
+        return images.stream()
+                .filter(image -> isAvailableImageFile(
+                        activeFiles.get(image.getPropertyFileId())
+                ))
+                .map(image -> toImageResponse(
+                        image,
+                        activeFiles.get(image.getPropertyFileId())
+                ))
+                .toList();
+    }
+
+    private boolean isAvailableImageFile(PropertyFile propertyFile) {
+        return propertyFile != null
+                && propertyFile.getUploadStatus() == UploadStatus.LINKED
+                && propertyFile.getFilePurpose() == FilePurpose.PROPERTY_IMAGE
+                && propertyFile.getObjectDeletedAt() == null;
+    }
+
+    private PropertyEditImageResponse toImageResponse(
+            PropertyImage image,
+            PropertyFile propertyFile
+    ) {
+        return new PropertyEditImageResponse(
+                image.getPropertyFileId(),
+                getUrlGenerator.generate(propertyFile.getObjectKey()),
+                image.getSortOrder(),
+                image.getIsRepresentative()
+        );
     }
 
     private Property findActiveProperty(Long propertyId) {
