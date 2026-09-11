@@ -66,7 +66,6 @@ property:
       secret-version: ${PROPERTY_PUBLIC_LOCATION_SECRET_VERSION:v1}
       min-distance-meters: ${PROPERTY_PUBLIC_LOCATION_MIN_DISTANCE_METERS:80}
       max-distance-meters: ${PROPERTY_PUBLIC_LOCATION_MAX_DISTANCE_METERS:180}
-
 # Springdoc Openapi
 springdoc:
   default-consumes-media-type: application/json

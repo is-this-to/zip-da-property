@@ -294,6 +294,14 @@ public class Property extends BaseAuditEntity {
         recordUpdate(actorContext);
     }
 
+    public void changeVerificationStatus(
+            VerificationStatus targetStatus,
+            ActorContext actorContext
+    ) {
+        this.verificationStatus = targetStatus;
+        recordUpdate(actorContext);
+    }
+
     public void softDelete(
             ActorContext actorContext,
             Instant deletedAt,

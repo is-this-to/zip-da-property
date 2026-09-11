@@ -95,6 +95,24 @@ public enum CustomResponseCode {
             "P25"
     ),
 
+    // 매물 소유·중개 검증 관련
+    PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS(
+            HttpStatus.CONFLICT,
+            "P25"
+    ),
+    PROPERTY_VERIFICATION_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "P26"
+    ),
+    PROPERTY_VERIFICATION_REVIEW_NOT_ALLOWED(
+            HttpStatus.CONFLICT,
+            "P27"
+    ),
+    PROPERTY_VERIFICATION_EVIDENCE_INVALID(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P28"
+    ),
+
     // 파일 처리 관련
     FILE_MANAGED_ERROR(
             HttpStatus.INTERNAL_SERVER_ERROR,

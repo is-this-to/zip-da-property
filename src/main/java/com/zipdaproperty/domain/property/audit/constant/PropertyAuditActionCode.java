@@ -17,6 +17,15 @@ public final class PropertyAuditActionCode {
     public static final String PROPERTY_RESTORED =
             "PROPERTY_RESTORED";
 
+    public static final String PROPERTY_VERIFICATION_REQUESTED =
+            "PROPERTY_VERIFICATION_REQUESTED";
+
+    public static final String PROPERTY_VERIFICATION_APPROVED =
+            "PROPERTY_VERIFICATION_APPROVED";
+
+    public static final String PROPERTY_VERIFICATION_REJECTED =
+            "PROPERTY_VERIFICATION_REJECTED";
+
     private PropertyAuditActionCode() {
     }
 }

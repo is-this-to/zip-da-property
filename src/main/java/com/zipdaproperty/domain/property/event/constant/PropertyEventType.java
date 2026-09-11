@@ -8,6 +8,12 @@ public final class PropertyEventType {
     public static final String PROPERTY_REACTIVATED = "PROPERTY_REACTIVATED";
     public static final String PROPERTY_COMPLETED = "PROPERTY_COMPLETED";
     public static final String PROPERTY_DELETED = "PROPERTY_DELETED";
+    public static final String PROPERTY_VERIFICATION_REQUESTED =
+            "PROPERTY_VERIFICATION_REQUESTED";
+    public static final String PROPERTY_VERIFICATION_APPROVED =
+            "PROPERTY_VERIFICATION_APPROVED";
+    public static final String PROPERTY_VERIFICATION_REJECTED =
+            "PROPERTY_VERIFICATION_REJECTED";
 
     private PropertyEventType() {
     }
