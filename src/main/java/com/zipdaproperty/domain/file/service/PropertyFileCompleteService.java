@@ -15,6 +15,7 @@ import com.zipdaproperty.global.error.custom.business.FileOwnershipRequiredExcep
 import com.zipdaproperty.global.error.custom.business.FileTooLargeException;
 import com.zipdaproperty.global.error.custom.business.InvalidFileTypeException;
 import com.zipdaproperty.global.error.custom.business.NotFoundResourceException;
+import com.zipdaproperty.global.error.custom.business.UnauthenticatedException;
 import com.zipdaproperty.global.error.custom.business.UploadSessionExpiredException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +43,8 @@ public class PropertyFileCompleteService {
             PropertyFileCompleteRequest request,
             ActorContext actorContext
     ) {
+        validateActorContext(actorContext);
+
         PropertyFile propertyFile = propertyFileRepository
                 .findByPropertyFileIdAndDeletedAtIsNull(fileId)
                 .orElseThrow(() -> new NotFoundResourceException(
@@ -83,6 +86,14 @@ public class PropertyFileCompleteService {
         propertyFileRepository.save(propertyFile);
 
         return new PropertyFileCompleteResponse();
+    }
+
+    private void validateActorContext(ActorContext actorContext) {
+        if (actorContext == null || actorContext.memberId() == null) {
+            throw new UnauthenticatedException(
+                    "로그인이 필요한 요청입니다."
+            );
+        }
     }
 
     private void validateOwnership(

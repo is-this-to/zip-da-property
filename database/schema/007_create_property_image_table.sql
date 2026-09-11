@@ -29,19 +29,15 @@ CREATE TABLE `property_image`
             ) STORED
         COMMENT '활성 대표 이미지만 property_id를 가지는 generated key',
 
-    `active_property_file_key` VARCHAR(150)
+    `active_property_file_key` BIGINT
         GENERATED ALWAYS AS (
             CASE
                 WHEN `deleted_at` IS NULL
-                    THEN CONCAT(
-                        CAST(`property_id` AS CHAR),
-                        ':',
-                        CAST(`property_file_id` AS CHAR)
-                         )
+                    THEN `property_file_id`
                 ELSE NULL
                 END
             ) STORED
-        COMMENT '활성 매물+파일 조합 generated key',
+        COMMENT '활성 이미지에서 유일한 property_file_id generated key',
 
     `created_at`               DATETIME(6)  NOT NULL,
     `created_by_member_id`     BIGINT       NULL,

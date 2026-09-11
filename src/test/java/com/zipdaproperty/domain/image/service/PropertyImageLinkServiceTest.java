@@ -11,10 +11,12 @@ import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.error.custom.business.FileOwnershipRequiredException;
 import com.zipdaproperty.global.error.custom.business.NotFoundResourceException;
+import com.zipdaproperty.global.error.custom.business.DuplicatedResourceException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -85,6 +87,18 @@ class PropertyImageLinkServiceTest {
                 0,
                 true
         );
+    }
+
+    @Test
+    void linkImages_activeFileUniqueConflict_translatesDuplicateException() {
+        Long fileId = 1_001L;
+        prepareActiveCompletedFile(fileId, OWNER_MEMBER_ID);
+        when(propertyImageRepository.saveAllAndFlush(anyList()))
+                .thenThrow(new DataIntegrityViolationException("unique"));
+
+        assertThatThrownBy(() -> service.linkImages(
+                PROPERTY_ID, List.of(fileId), ACTOR_CONTEXT
+        )).isInstanceOf(DuplicatedResourceException.class);
     }
 
     @Test
@@ -201,7 +215,7 @@ class PropertyImageLinkServiceTest {
         verify(
                 propertyImageRepository,
                 never()
-        ).saveAll(anyList());
+        ).saveAllAndFlush(anyList());
 
         assertThat(propertyFile.getUploadStatus())
                 .isEqualTo(UploadStatus.VERIFIED);
@@ -236,7 +250,7 @@ class PropertyImageLinkServiceTest {
         verify(
                 propertyImageRepository,
                 never()
-        ).saveAll(anyList());
+        ).saveAllAndFlush(anyList());
     }
 
     @Test
@@ -357,7 +371,7 @@ class PropertyImageLinkServiceTest {
         verify(
                 propertyImageRepository,
                 never()
-        ).saveAll(anyList());
+        ).saveAllAndFlush(anyList());
     }
 
     @Test
@@ -394,7 +408,7 @@ class PropertyImageLinkServiceTest {
         verify(
                 propertyImageRepository,
                 never()
-        ).saveAll(anyList());
+        ).saveAllAndFlush(anyList());
     }
 
     @Test
@@ -432,7 +446,7 @@ class PropertyImageLinkServiceTest {
         verify(
                 propertyImageRepository,
                 never()
-        ).saveAll(anyList());
+        ).saveAllAndFlush(anyList());
     }
 
     @Test
@@ -473,7 +487,7 @@ class PropertyImageLinkServiceTest {
         verify(
                 propertyImageRepository,
                 never()
-        ).saveAll(anyList());
+        ).saveAllAndFlush(anyList());
     }
 
     @Test
@@ -518,7 +532,7 @@ class PropertyImageLinkServiceTest {
         verify(
                 propertyImageRepository,
                 never()
-        ).saveAll(anyList());
+        ).saveAllAndFlush(anyList());
 
         assertThat(validFile.getUploadStatus())
                 .isEqualTo(UploadStatus.VERIFIED);
@@ -594,7 +608,7 @@ class PropertyImageLinkServiceTest {
 
         verify(
                 propertyImageRepository
-        ).saveAll(
+        ).saveAllAndFlush(
                 captor.capture()
         );
 

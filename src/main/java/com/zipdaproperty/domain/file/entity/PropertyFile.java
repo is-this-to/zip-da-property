@@ -195,4 +195,28 @@ public class PropertyFile extends BaseAuditEntity {
         this.linkedAt = Instant.now();
         recordUpdate(actorContext);
     }
+
+    public void softDelete(
+            ActorContext actorContext,
+            Instant deletedAt,
+            String deleteReason
+    ) {
+        recordDeletion(
+                actorContext,
+                deletedAt,
+                deleteReason
+        );
+    }
+
+    public void markObjectDeleted(
+            Instant objectDeletedAt,
+            ActorContext actorContext
+    ) {
+        if (this.objectDeletedAt != null) {
+            return;
+        }
+
+        this.objectDeletedAt = objectDeletedAt;
+        recordUpdate(actorContext);
+    }
 }

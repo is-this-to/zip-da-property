@@ -13,6 +13,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.Filter;
 
+import java.time.Instant;
+
 @Getter
 @Entity
 @Filter(name = "softDelete")
@@ -66,11 +68,10 @@ public class PropertyImage extends BaseAuditEntity {
 
     @Column(
             name = "active_property_file_key",
-            length = 150,
             insertable = false,
             updatable = false
     )
-    private String activePropertyFileKey;
+    private Long activePropertyFileKey;
 
     private PropertyImage(
             Long propertyId,
@@ -103,6 +104,42 @@ public class PropertyImage extends BaseAuditEntity {
                 isRepresentative,
                 altText,
                 actorContext
+        );
+    }
+
+    public void changeSortOrder(
+            Integer sortOrder,
+            ActorContext actorContext
+    ) {
+        if (this.sortOrder.equals(sortOrder)) {
+            return;
+        }
+
+        this.sortOrder = sortOrder;
+        recordUpdate(actorContext);
+    }
+
+    public void changeRepresentative(
+            boolean representative,
+            ActorContext actorContext
+    ) {
+        if (this.isRepresentative == representative) {
+            return;
+        }
+
+        this.isRepresentative = representative;
+        recordUpdate(actorContext);
+    }
+
+    public void softDelete(
+            ActorContext actorContext,
+            Instant deletedAt,
+            String deleteReason
+    ) {
+        recordDeletion(
+                actorContext,
+                deletedAt,
+                deleteReason
         );
     }
 }

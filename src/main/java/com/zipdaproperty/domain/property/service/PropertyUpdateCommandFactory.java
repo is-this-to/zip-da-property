@@ -54,7 +54,9 @@ public class PropertyUpdateCommandFactory {
             Property property,
             PropertyUpdateRequest request
     ) {
-        Map<String, JsonNode> changes = request.changes();
+        Map<String, JsonNode> changes = request.changes() == null
+                ? Map.of()
+                : request.changes();
 
         validateChanges(changes);
 
@@ -202,11 +204,8 @@ public class PropertyUpdateCommandFactory {
     }
 
     private void validateChanges(Map<String, JsonNode> changes) {
-        if (changes == null || changes.isEmpty()) {
-            throw new BusinessException(
-                    CustomResponseCode.INVALID_REQUEST,
-                    "changes에는 최소 한 개 이상의 수정 필드가 필요합니다."
-            );
+        if (changes.isEmpty()) {
+            return;
         }
 
         List<String> invalidFields = changes.keySet()

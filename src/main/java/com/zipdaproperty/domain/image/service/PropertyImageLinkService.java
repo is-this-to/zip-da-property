@@ -7,10 +7,12 @@ import com.zipdaproperty.domain.image.entity.PropertyImage;
 import com.zipdaproperty.domain.image.repository.PropertyImageRepository;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.error.custom.BusinessException;
+import com.zipdaproperty.global.error.custom.business.DuplicatedResourceException;
 import com.zipdaproperty.global.error.custom.business.FileOwnershipRequiredException;
 import com.zipdaproperty.global.error.custom.business.NotFoundResourceException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -74,7 +76,13 @@ public class PropertyImageLinkService {
             images.add(propertyImage);
         }
 
-        propertyImageRepository.saveAll(images);
+        try {
+            propertyImageRepository.saveAllAndFlush(images);
+        } catch (DataIntegrityViolationException exception) {
+            throw new DuplicatedResourceException(
+                    "이미 다른 매물에 연결된 파일입니다."
+            );
+        }
 
         for (PropertyFile propertyFile : propertyFiles) {
             propertyFile.markLinked(actorContext);

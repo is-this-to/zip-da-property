@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.image.service.PropertyImageDeletionService;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.entity.Property;
@@ -44,6 +45,8 @@ public class PropertyDeleteService {
 
     private final PropertyVersionPolicy propertyVersionPolicy;
 
+    private final PropertyImageDeletionService propertyImageDeletionService;
+
     private final ObjectMapper objectMapper;
 
     private final PropertyAuditEventRecorder
@@ -80,6 +83,12 @@ public class PropertyDeleteService {
                 actorContext,
                 occurredAt,
                 request.deleteReason()
+        );
+
+        propertyImageDeletionService.deleteAllForProperty(
+                propertyId,
+                actorContext,
+                occurredAt
         );
 
         Property savedProperty =

@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.image.service.PropertyImageSyncService;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyUpdateCommand;
@@ -24,11 +25,14 @@ import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.OptimisticLockingFailureException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -47,6 +51,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.same;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class PropertyUpdateServiceTest {
@@ -96,6 +101,12 @@ class PropertyUpdateServiceTest {
     private final PropertyPricePolicy propertyPricePolicy =
             mock(PropertyPricePolicy.class);
 
+    private final PropertyImageSyncService propertyImageSyncService =
+            mock(PropertyImageSyncService.class);
+
+    private final EntityManager entityManager =
+            mock(EntityManager.class);
+
     private final ObjectMapper objectMapper =
             mock(ObjectMapper.class);
 
@@ -116,6 +127,8 @@ class PropertyUpdateServiceTest {
                     propertyUpdateCommandFactory,
                     propertyUpdatePolicy,
                     propertyPricePolicy,
+                    propertyImageSyncService,
+                    entityManager,
                     objectMapper,
                     propertyAuditEventRecorder,
                     propertyKafkaEventPublisher
@@ -229,6 +242,11 @@ class PropertyUpdateServiceTest {
 
         verify(propertyRepository)
                 .saveAndFlush(property);
+
+        verifyNoInteractions(
+                propertyImageSyncService,
+                entityManager
+        );
 
         ArgumentCaptor<PropertyRevision> revisionCaptor =
                 ArgumentCaptor.forClass(
@@ -353,6 +371,205 @@ class PropertyUpdateServiceTest {
     }
 
     @Test
+    void update_fileIdsOnly_updatesImagesVersionRevisionAndAudit() {
+        Property property = prepareExistingProperty(CURRENT_VERSION);
+        prepareCompletePropertyState(property);
+        when(property.getTitle()).thenReturn(BEFORE_TITLE);
+
+        List<Long> fileIds = List.of(2L, 3L);
+        JsonNode fileIdsNode = mock(JsonNode.class);
+        PropertyUpdateRequest request = new PropertyUpdateRequest(
+                CURRENT_VERSION,
+                Map.of(),
+                fileIds
+        );
+        PropertyUpdateCommand command = createUpdateCommand(
+                CURRENT_VERSION,
+                BEFORE_TITLE
+        );
+        when(propertyUpdateCommandFactory.create(property, request))
+                .thenReturn(command);
+        when(regionRepository.findByRegionIdAndIsActiveTrue(REGION_ID))
+                .thenReturn(Optional.of(mock(Region.class)));
+        when(propertyImageSyncService.prepareSync(PROPERTY_ID, fileIds))
+                .thenReturn(new PropertyImageSyncService.SyncPlan(
+                        List.of(1L, 2L),
+                        true
+                ));
+        prepareImageSnapshots(property, fileIdsNode);
+        when(objectMapper.writeValueAsString(List.of("fileIds")))
+                .thenReturn("[\"fileIds\"]");
+        when(propertyRepository.saveAndFlush(property))
+                .thenReturn(property);
+
+        PropertyUpdateResponse response = propertyUpdateService.update(
+                PROPERTY_ID,
+                request,
+                ownerContext
+        );
+
+        assertThat(response.version()).isEqualTo(NEXT_VERSION);
+        verify(property, never()).update(any(), any());
+        verify(entityManager).lock(
+                property,
+                LockModeType.OPTIMISTIC_FORCE_INCREMENT
+        );
+        verify(propertyImageSyncService).syncImages(
+                PROPERTY_ID,
+                fileIds,
+                ownerContext
+        );
+
+        ArgumentCaptor<PropertyRevision> revisionCaptor =
+                ArgumentCaptor.forClass(PropertyRevision.class);
+        verify(propertyRevisionRepository).save(revisionCaptor.capture());
+        assertThat(revisionCaptor.getValue().getPropertyVersion())
+                .isEqualTo(NEXT_VERSION);
+        assertThat(revisionCaptor.getValue().getChangedFieldsJson())
+                .isEqualTo("[\"fileIds\"]");
+        verify(propertyAuditEventRecorder).recordPropertyAction(
+                eq(PROPERTY_ID),
+                eq(PropertyAuditActionCode.PROPERTY_UPDATED),
+                eq(UPDATE_REASON),
+                isNull(),
+                any(Instant.class),
+                same(ownerContext)
+        );
+    }
+
+    @Test
+    void update_propertyFieldAndFileIds_updatesBothWithoutForcedIncrement() {
+        Property property = prepareExistingProperty(CURRENT_VERSION);
+        prepareCompletePropertyState(property);
+        when(property.getTitle()).thenReturn(BEFORE_TITLE, AFTER_TITLE);
+        when(property.getVersion()).thenReturn(
+                CURRENT_VERSION,
+                NEXT_VERSION,
+                NEXT_VERSION
+        );
+
+        List<Long> fileIds = List.of(3L, 1L, 4L);
+        JsonNode titleNode = mock(JsonNode.class);
+        JsonNode fileIdsNode = mock(JsonNode.class);
+        PropertyUpdateRequest request = new PropertyUpdateRequest(
+                CURRENT_VERSION,
+                Map.of("title", titleNode),
+                fileIds
+        );
+        PropertyUpdateCommand command = createUpdateCommand(
+                CURRENT_VERSION,
+                AFTER_TITLE
+        );
+        when(propertyUpdateCommandFactory.create(property, request))
+                .thenReturn(command);
+        when(regionRepository.findByRegionIdAndIsActiveTrue(REGION_ID))
+                .thenReturn(Optional.of(mock(Region.class)));
+        when(propertyImageSyncService.prepareSync(PROPERTY_ID, fileIds))
+                .thenReturn(new PropertyImageSyncService.SyncPlan(
+                        List.of(1L, 2L, 3L),
+                        true
+                ));
+        prepareImageSnapshots(property, fileIdsNode);
+        when(objectMapper.writeValueAsString(
+                List.of("fileIds", "title")
+        )).thenReturn("[\"fileIds\",\"title\"]");
+        when(propertyRepository.saveAndFlush(property))
+                .thenReturn(property);
+
+        propertyUpdateService.update(
+                PROPERTY_ID,
+                request,
+                ownerContext
+        );
+
+        verify(property).update(command, ownerContext);
+        verifyNoInteractions(entityManager);
+        verify(propertyImageSyncService).syncImages(
+                PROPERTY_ID,
+                fileIds,
+                ownerContext
+        );
+        ArgumentCaptor<PropertyRevision> revisionCaptor =
+                ArgumentCaptor.forClass(PropertyRevision.class);
+        verify(propertyRevisionRepository).save(revisionCaptor.capture());
+        assertThat(revisionCaptor.getValue().getPropertyVersion())
+                .isEqualTo(NEXT_VERSION);
+        assertThat(revisionCaptor.getValue().getChangedFieldsJson())
+                .isEqualTo("[\"fileIds\",\"title\"]");
+    }
+
+    @Test
+    void update_sameFileIdsOnly_rejectsAsNoActualChanges() {
+        Property property = prepareExistingProperty(CURRENT_VERSION);
+        prepareCompletePropertyState(property);
+        when(property.getTitle()).thenReturn(BEFORE_TITLE);
+
+        List<Long> fileIds = List.of(1L, 2L);
+        PropertyUpdateRequest request = new PropertyUpdateRequest(
+                CURRENT_VERSION,
+                Map.of(),
+                fileIds
+        );
+        PropertyUpdateCommand command = createUpdateCommand(
+                CURRENT_VERSION,
+                BEFORE_TITLE
+        );
+        when(propertyUpdateCommandFactory.create(property, request))
+                .thenReturn(command);
+        when(regionRepository.findByRegionIdAndIsActiveTrue(REGION_ID))
+                .thenReturn(Optional.of(mock(Region.class)));
+        when(propertyImageSyncService.prepareSync(PROPERTY_ID, fileIds))
+                .thenReturn(new PropertyImageSyncService.SyncPlan(
+                        fileIds,
+                        false
+                ));
+
+        assertThatThrownBy(() -> propertyUpdateService.update(
+                PROPERTY_ID,
+                request,
+                ownerContext
+        )).isInstanceOfSatisfying(BusinessException.class, exception ->
+                assertThat(exception.getCustomResponseCode())
+                        .isEqualTo(CustomResponseCode.INVALID_REQUEST)
+        );
+
+        verify(propertyImageSyncService, never()).syncImages(
+                any(),
+                any(),
+                any()
+        );
+        verifyNoInteractions(entityManager);
+        verify(propertyRepository, never()).saveAndFlush(any());
+        verify(propertyRevisionRepository, never()).save(any());
+        verifyNoDomainEventsRecorded();
+    }
+
+    @Test
+    void update_staleVersionWithFileIds_rejectsBeforeImageComparison() {
+        Property property = prepareExistingProperty(NEXT_VERSION);
+        PropertyUpdateRequest request = new PropertyUpdateRequest(
+                CURRENT_VERSION,
+                Map.of(),
+                List.of(2L, 1L)
+        );
+
+        assertThatThrownBy(() -> propertyUpdateService.update(
+                PROPERTY_ID,
+                request,
+                ownerContext
+        )).isInstanceOfSatisfying(BusinessException.class, exception ->
+                assertThat(exception.getCustomResponseCode())
+                        .isEqualTo(CustomResponseCode.VERSION_CONFLICT)
+        );
+
+        verify(propertyUpdateCommandFactory, never()).create(any(), any());
+        verifyNoInteractions(propertyImageSyncService, entityManager);
+        verify(propertyRepository, never()).saveAndFlush(any());
+        verify(propertyRevisionRepository, never()).save(any());
+        verifyNoDomainEventsRecorded();
+    }
+
+    @Test
     void update_staleVersion_throwsVersionConflict() {
         Property property =
                 prepareExistingProperty(NEXT_VERSION);
@@ -398,6 +615,11 @@ class PropertyUpdateServiceTest {
                 never()
         ).save(
                 any(PropertyRevision.class)
+        );
+
+        verifyNoInteractions(
+                propertyImageSyncService,
+                entityManager
         );
 
         verifyNoDomainEventsRecorded();
@@ -715,6 +937,20 @@ class PropertyUpdateServiceTest {
                 false,
                 title,
                 "자동 테스트용 매물 설명"
+        );
+    }
+
+    private void prepareImageSnapshots(
+            Property property,
+            JsonNode fileIdsNode
+    ) {
+        ObjectNode snapshot = mock(ObjectNode.class);
+        when(objectMapper.valueToTree(property)).thenReturn(snapshot);
+        when(objectMapper.valueToTree(any(List.class)))
+                .thenReturn(fileIdsNode);
+        when(objectMapper.writeValueAsString(snapshot)).thenReturn(
+                "{\"title\":\"수정 전 제목\",\"fileIds\":[1,2]}",
+                "{\"title\":\"수정 후 제목\",\"fileIds\":[2,3]}"
         );
     }
 }

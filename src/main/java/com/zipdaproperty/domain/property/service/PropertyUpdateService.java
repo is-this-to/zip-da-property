@@ -1,5 +1,7 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.image.service.PropertyImageSyncService;
+import com.zipdaproperty.domain.image.service.PropertyImageSyncService.SyncPlan;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyUpdateCommand;
@@ -16,14 +18,18 @@ import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +59,10 @@ public class PropertyUpdateService {
 
     private final PropertyPricePolicy propertyPricePolicy;
 
+    private final PropertyImageSyncService propertyImageSyncService;
+
+    private final EntityManager entityManager;
+
     private final ObjectMapper objectMapper;
 
     private final PropertyAuditEventRecorder
@@ -74,8 +84,10 @@ public class PropertyUpdateService {
                 actorContext
         );
 
+        Long currentPropertyVersion = property.getVersion();
+
         propertyVersionPolicy.validate(
-                property.getVersion(),
+                currentPropertyVersion,
                 request.version()
         );
 
@@ -96,30 +108,73 @@ public class PropertyUpdateService {
                 command.monthlyRent()
         );
 
-        List<String> changedFields =
+        boolean imageChangeRequested = request.fileIds() != null;
+        SyncPlan imageSyncPlan = imageChangeRequested
+                ? propertyImageSyncService.prepareSync(
+                        propertyId,
+                        request.fileIds()
+                )
+                : null;
+
+        List<String> propertyChangedFields =
                 detectChangedFields(
                         property,
                         command,
-                        request.changes().keySet()
+                        request.changes() == null
+                                ? Set.of()
+                                : request.changes().keySet()
                 );
+        List<String> changedFields = mergeChangedFields(
+                propertyChangedFields,
+                imageSyncPlan
+        );
 
         validateActualChanges(changedFields);
 
-        String beforeSnapshotJson =
-                objectMapper.writeValueAsString(property);
+        String beforeSnapshotJson = writeSnapshot(
+                property,
+                imageSyncPlan == null
+                        ? null
+                        : imageSyncPlan.currentFileIds()
+        );
 
         Instant occurredAt = Instant.now();
 
-        property.update(
-                command,
-                actorContext
-        );
+        if (propertyChangedFields.isEmpty()) {
+            entityManager.lock(
+                    property,
+                    LockModeType.OPTIMISTIC_FORCE_INCREMENT
+            );
+        } else {
+            property.update(
+                    command,
+                    actorContext
+            );
+        }
+
+        if (imageSyncPlan != null
+                && imageSyncPlan.changesRequired()) {
+            propertyImageSyncService.syncImages(
+                    propertyId,
+                    request.fileIds(),
+                    actorContext
+            );
+        }
 
         Property savedProperty =
                 saveAndFlush(property);
 
-        String afterSnapshotJson =
-                objectMapper.writeValueAsString(savedProperty);
+        Long resultingPropertyVersion =
+                propertyChangedFields.isEmpty()
+                        ? currentPropertyVersion + 1
+                        : savedProperty.getVersion();
+
+        String afterSnapshotJson = writeSnapshot(
+                savedProperty,
+                imageSyncPlan == null
+                        ? null
+                        : request.fileIds()
+        );
 
         String changedFieldsJson =
                 objectMapper.writeValueAsString(changedFields);
@@ -127,7 +182,7 @@ public class PropertyUpdateService {
         PropertyRevision revision =
                 PropertyRevision.updated(
                         savedProperty.getPropertyId(),
-                        savedProperty.getVersion(),
+                        resultingPropertyVersion,
                         changedFieldsJson,
                         beforeSnapshotJson,
                         afterSnapshotJson,
@@ -140,12 +195,46 @@ public class PropertyUpdateService {
 
         recordUpdateEvents(
                 savedProperty,
+                resultingPropertyVersion,
                 changedFields,
                 actorContext,
                 occurredAt
         );
 
-        return PropertyUpdateResponse.from(savedProperty);
+        return PropertyUpdateResponse.from(
+                savedProperty,
+                resultingPropertyVersion
+        );
+    }
+
+    private List<String> mergeChangedFields(
+            List<String> propertyChangedFields,
+            SyncPlan imageSyncPlan
+    ) {
+        List<String> changedFields = new ArrayList<>(
+                propertyChangedFields
+        );
+        if (imageSyncPlan != null
+                && imageSyncPlan.changesRequired()) {
+            changedFields.add("fileIds");
+        }
+        return changedFields.stream().sorted().toList();
+    }
+
+    private String writeSnapshot(
+            Property property,
+            List<Long> fileIds
+    ) {
+        if (fileIds == null) {
+            return objectMapper.writeValueAsString(property);
+        }
+
+        ObjectNode snapshot = objectMapper.valueToTree(property);
+        snapshot.set(
+                "fileIds",
+                objectMapper.valueToTree(fileIds)
+        );
+        return objectMapper.writeValueAsString(snapshot);
     }
 
     private Property findProperty(Long propertyId) {
@@ -427,6 +516,7 @@ public class PropertyUpdateService {
 
     private void recordUpdateEvents(
             Property property,
+            Long propertyVersion,
             List<String> changedFields,
             ActorContext actorContext,
             Instant occurredAt
@@ -443,12 +533,13 @@ public class PropertyUpdateService {
         Map<String, Object> kafkaPayload =
                 createPropertyUpdatedPayload(
                         property,
+                        propertyVersion,
                         changedFields
                 );
 
         propertyKafkaEventPublisher.publishAfterCommit(
                 property.getPropertyId(),
-                property.getVersion(),
+                propertyVersion,
                 PropertyEventType.PROPERTY_UPDATED,
                 kafkaPayload,
                 occurredAt,
@@ -458,6 +549,7 @@ public class PropertyUpdateService {
 
     private Map<String, Object> createPropertyUpdatedPayload(
             Property property,
+            Long propertyVersion,
             List<String> changedFields
     ) {
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -468,7 +560,7 @@ public class PropertyUpdateService {
         );
         payload.put(
                 "version",
-                property.getVersion()
+                propertyVersion
         );
         payload.put(
                 "changedFields",
