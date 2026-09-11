@@ -3,6 +3,7 @@ package com.zipdaproperty.domain.property.service;
 import com.zipdaproperty.domain.property.command.PropertyUpdateCommand;
 import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.request.PropertyUpdateRequest;
+import com.zipdaproperty.domain.property.request.PropertyOptionRequest;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import org.junit.jupiter.api.Test;
@@ -52,6 +53,32 @@ class PropertyUpdateCommandFactoryTest {
         );
 
         assertThat(command.title()).isEqualTo("수정 제목");
+    }
+
+    @Test
+    void create_optionsOnly_acceptsEmptyAndNonEmptyLists() {
+        for (List<PropertyOptionRequest> options : List.of(
+                List.<PropertyOptionRequest>of(), List.of(new PropertyOptionRequest("PARKING", "2")))) {
+            PropertyUpdateCommand command = factory.create(mock(Property.class),
+                    new PropertyUpdateRequest(3L, null, null, null, options));
+            assertThat(command.requestedVersion()).isEqualTo(3L);
+        }
+    }
+
+    @Test
+    void create_noTargets_rejects() {
+        assertThatThrownBy(() -> factory.create(mock(Property.class), new PropertyUpdateRequest(3L, null)))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getCustomResponseCode()).isEqualTo(CustomResponseCode.INVALID_REQUEST));
+    }
+
+    @Test
+    void create_invalidChangesWithOptions_stillRejects() {
+        PropertyUpdateRequest request = new PropertyUpdateRequest(3L,
+                Map.of("options", objectMapper.readTree("[]")), null, null, List.of());
+        assertThatThrownBy(() -> factory.create(mock(Property.class), request))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getCustomResponseCode()).isEqualTo(CustomResponseCode.INVALID_REQUEST));
     }
 
     @Test

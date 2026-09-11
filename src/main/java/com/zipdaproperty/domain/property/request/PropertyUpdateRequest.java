@@ -34,12 +34,23 @@ public record PropertyUpdateRequest(
         List<@NotNull Long> fileIds,
 
         @Valid
-        PropertyAddressRequest address
+        PropertyAddressRequest address,
+
+        List<@Valid PropertyOptionRequest> options
 
 ) {
 
     public PropertyUpdateRequest {
         changes = changes == null ? Map.of() : Map.copyOf(changes);
+    }
+
+    public PropertyUpdateRequest(
+            Long version,
+            Map<String, JsonNode> changes,
+            List<Long> fileIds,
+            PropertyAddressRequest address
+    ) {
+        this(version, changes, fileIds, address, null);
     }
 
     public PropertyUpdateRequest(
@@ -71,12 +82,13 @@ public record PropertyUpdateRequest(
         return (List<Long>) updateTarget;
     }
 
-    @AssertTrue(message = "수정할 필드, 파일 ID 목록 또는 주소가 필요합니다.")
+    @AssertTrue(message = "수정할 필드, 파일 ID 목록, 주소 또는 옵션 목록이 필요합니다.")
     @JsonIgnore
     @Schema(hidden = true)
     public boolean isUpdateTargetProvided() {
         return (changes != null && !changes.isEmpty())
                 || fileIds != null
-                || address != null;
+                || address != null
+                || options != null;
     }
 }

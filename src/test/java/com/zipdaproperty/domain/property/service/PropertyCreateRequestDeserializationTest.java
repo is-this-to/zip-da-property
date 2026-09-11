@@ -26,6 +26,7 @@ class PropertyCreateRequestDeserializationTest {
                   "exclusiveArea": 59.99,
                   "title": "Address integration test",
                   "description": "Property and address transaction test",
+                  "options": [],
                   "address": {
                     "roadAddress": "Test road 100",
                     "jibunAddress": "Test jibun 100",

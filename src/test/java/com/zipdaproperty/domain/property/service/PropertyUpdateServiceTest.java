@@ -1,6 +1,10 @@
 package com.zipdaproperty.domain.property.service;
 
 import com.zipdaproperty.domain.image.service.PropertyImageSyncService;
+import com.zipdaproperty.domain.option.command.PropertyOptionCreateCommand;
+import com.zipdaproperty.domain.option.service.PropertyOptionCommandService;
+import com.zipdaproperty.domain.option.service.PropertyOptionCommandService.OptionSyncPlan;
+import com.zipdaproperty.domain.property.request.PropertyOptionRequest;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyUpdateCommand;
@@ -33,11 +37,15 @@ import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.InOrder;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.OptimisticLockingFailureException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -53,6 +61,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.same;
@@ -131,6 +140,9 @@ class PropertyUpdateServiceTest {
             memberWritePermissionService =
             mock(MemberWritePermissionService.class);
 
+    private final PropertyOptionCommandService propertyOptionCommandService =
+            mock(PropertyOptionCommandService.class);
+
     private final PropertyUpdateService propertyUpdateService =
             new PropertyUpdateService(
                     propertyRepository,
@@ -146,6 +158,7 @@ class PropertyUpdateServiceTest {
                     propertyAuditEventRecorder,
                     propertyKafkaEventPublisher,
                     propertyAddressService,
+                    propertyOptionCommandService,
                     memberWritePermissionService
             );
 
@@ -954,6 +967,142 @@ class PropertyUpdateServiceTest {
         verifyNoDomainEventsRecorded();
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void update_optionsOnly_synchronizesAfterSavedRevisionAndIncrementsVersion(boolean empty) {
+        List<PropertyOptionRequest> options = empty ? List.of()
+                : List.of(new PropertyOptionRequest("PARKING", "2"));
+        PropertyUpdateRequest request = new PropertyUpdateRequest(CURRENT_VERSION, null, null, null, options);
+        Property property = prepareOptionUpdate(request);
+        List<PropertyOptionCreateCommand> commands = options.stream().map(PropertyOptionRequest::toCommand).toList();
+        when(propertyOptionCommandService.prepareSync(PROPERTY_ID, PropertyType.APARTMENT, commands))
+                .thenReturn(new OptionSyncPlan(true));
+
+        PropertyUpdateResponse response = propertyUpdateService.update(PROPERTY_ID, request, ownerContext);
+
+        assertThat(response.version()).isEqualTo(NEXT_VERSION);
+        verify(entityManager).lock(property, LockModeType.OPTIMISTIC_FORCE_INCREMENT);
+        verify(entityManager, never()).lock(property, LockModeType.PESSIMISTIC_FORCE_INCREMENT);
+        verify(property, never()).update(any(), any());
+        verify(objectMapper).writeValueAsString(List.of("options"));
+        InOrder order = inOrder(propertyOptionCommandService, propertyRevisionRepository, propertyKafkaEventPublisher);
+        order.verify(propertyOptionCommandService).prepareSync(PROPERTY_ID, PropertyType.APARTMENT, commands);
+        ArgumentCaptor<PropertyRevision> revision = ArgumentCaptor.forClass(PropertyRevision.class);
+        order.verify(propertyRevisionRepository).save(revision.capture());
+        assertThat(revision.getValue().getPropertyVersion()).isEqualTo(NEXT_VERSION);
+        order.verify(propertyOptionCommandService).synchronizeOptions(
+                PROPERTY_ID, 999L, PropertyType.APARTMENT, commands, "options", ownerContext);
+        order.verify(propertyKafkaEventPublisher).publishAfterCommit(eq(PROPERTY_ID), eq(NEXT_VERSION),
+                eq(PropertyEventType.PROPERTY_UPDATED), argThat(payload ->
+                        List.of("options").equals(payload.get("changedFields"))), any(), eq(ownerContext));
+        verifyNoInteractions(propertyImageSyncService, propertyAddressService);
+    }
+
+    @Test
+    void update_optionsNoOpWithoutOtherChanges_rejectsBeforeMutation() {
+        PropertyUpdateRequest request = new PropertyUpdateRequest(CURRENT_VERSION, null, null, null, List.of());
+        Property property = prepareOptionUpdate(request);
+        when(propertyOptionCommandService.prepareSync(PROPERTY_ID, PropertyType.APARTMENT, List.of()))
+                .thenReturn(new OptionSyncPlan(false));
+
+        assertThatThrownBy(() -> propertyUpdateService.update(PROPERTY_ID, request, ownerContext))
+                .isInstanceOfSatisfying(BusinessException.class, exception -> {
+                    assertThat(exception.getCustomResponseCode()).isEqualTo(CustomResponseCode.INVALID_REQUEST);
+                    assertThat(exception.getMessage()).contains("실제로 변경된 필드가 없습니다.");
+                });
+        verify(propertyOptionCommandService, never()).synchronizeOptions(any(), any(), any(), any(), any(), any());
+        verify(propertyRevisionRepository, never()).save(any());
+        verify(property, never()).update(any(), any());
+        verifyNoInteractions(entityManager);
+        verifyNoDomainEventsRecorded();
+    }
+
+    @Test
+    void update_optionsNoOpWithTitleChange_omitsOptionsAndSkipsSynchronization() {
+        PropertyUpdateRequest request = new PropertyUpdateRequest(CURRENT_VERSION,
+                Map.of("title", JsonMapper.builder().build().valueToTree(AFTER_TITLE)), null, null, List.of());
+        prepareOptionUpdate(request);
+        when(propertyOptionCommandService.prepareSync(PROPERTY_ID, PropertyType.APARTMENT, List.of()))
+                .thenReturn(new OptionSyncPlan(false));
+
+        propertyUpdateService.update(PROPERTY_ID, request, ownerContext);
+
+        verify(objectMapper).writeValueAsString(List.of("title"));
+        verify(propertyOptionCommandService, never()).synchronizeOptions(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void update_nullOptions_keepsOptionsUntouched() {
+        PropertyUpdateRequest request = new PropertyUpdateRequest(CURRENT_VERSION,
+                Map.of("title", JsonMapper.builder().build().valueToTree(AFTER_TITLE)));
+        prepareOptionUpdate(request);
+        propertyUpdateService.update(PROPERTY_ID, request, ownerContext);
+        verifyNoInteractions(propertyOptionCommandService);
+    }
+
+    @Test
+    void update_actualPropertyTypeChangeWithoutOptions_rejects() {
+        PropertyUpdateRequest request = new PropertyUpdateRequest(CURRENT_VERSION,
+                Map.of("propertyType", JsonMapper.builder().build().valueToTree("OFFICETEL")));
+        Property property = prepareOptionUpdate(request);
+
+        assertThatThrownBy(() -> propertyUpdateService.update(PROPERTY_ID, request, ownerContext))
+                .isInstanceOfSatisfying(BusinessException.class, exception -> {
+                    assertThat(exception.getCustomResponseCode()).isEqualTo(CustomResponseCode.INVALID_REQUEST);
+                    assertThat(exception.getMessage()).contains("매물 유형 변경 시 옵션 목록을 함께 전달해야 합니다.");
+                });
+        verifyNoInteractions(propertyOptionCommandService);
+        verify(property, never()).update(any(), any());
+        verify(propertyRevisionRepository, never()).save(any());
+    }
+
+    @Test
+    void update_unchangedPropertyTypeWithoutOptions_allowsOtherChanges() {
+        JsonMapper mapper = JsonMapper.builder().build();
+        PropertyUpdateRequest request = new PropertyUpdateRequest(CURRENT_VERSION,
+                Map.of("propertyType", mapper.valueToTree("APARTMENT"), "title", mapper.valueToTree(AFTER_TITLE)));
+        prepareOptionUpdate(request);
+        propertyUpdateService.update(PROPERTY_ID, request, ownerContext);
+        verifyNoInteractions(propertyOptionCommandService);
+        verify(objectMapper).writeValueAsString(List.of("title"));
+    }
+
+    @Test
+    void update_propertyTypeWithOptions_usesFinalTypeAndSortedChangedFields() {
+        PropertyUpdateRequest request = new PropertyUpdateRequest(CURRENT_VERSION,
+                Map.of("propertyType", JsonMapper.builder().build().valueToTree("OFFICETEL")),
+                null, null, List.of(new PropertyOptionRequest("PARKING", "2")));
+        Property property = prepareOptionUpdate(request);
+        List<PropertyOptionCreateCommand> commands = List.of(new PropertyOptionCreateCommand("PARKING", "2"));
+        when(propertyOptionCommandService.prepareSync(PROPERTY_ID, PropertyType.OFFICETEL, commands))
+                .thenReturn(new OptionSyncPlan(true));
+
+        propertyUpdateService.update(PROPERTY_ID, request, ownerContext);
+
+        verify(propertyOptionCommandService).prepareSync(PROPERTY_ID, PropertyType.OFFICETEL, commands);
+        verify(propertyOptionCommandService).synchronizeOptions(
+                PROPERTY_ID, 999L, PropertyType.OFFICETEL, commands, "options", ownerContext);
+        verify(objectMapper).writeValueAsString(List.of("options", "propertyType"));
+        verify(property).update(argThat(command -> command.propertyType() == PropertyType.OFFICETEL), eq(ownerContext));
+        verifyNoInteractions(entityManager);
+    }
+
+    private Property prepareOptionUpdate(PropertyUpdateRequest request) {
+        Property property = prepareExistingProperty(CURRENT_VERSION);
+        prepareCompletePropertyState(property);
+        when(property.getTitle()).thenReturn(BEFORE_TITLE);
+        PropertyUpdateCommand command = new PropertyUpdateCommandFactory(JsonMapper.builder().build())
+                .create(property, request);
+        when(propertyUpdateCommandFactory.create(property, request, null)).thenReturn(command);
+        when(regionRepository.findByRegionIdAndIsActiveTrue(REGION_ID)).thenReturn(Optional.of(mock(Region.class)));
+        when(propertyRepository.saveAndFlush(property)).thenReturn(property);
+        when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+        PropertyRevision savedRevision = mock(PropertyRevision.class);
+        when(savedRevision.getPropertyRevisionId()).thenReturn(999L);
+        when(propertyRevisionRepository.save(any(PropertyRevision.class))).thenReturn(savedRevision);
+        return property;
+    }
+
     private Property prepareExistingProperty(
             Long currentVersion
     ) {
@@ -975,6 +1124,8 @@ class PropertyUpdateServiceTest {
 
         when(property.getVersion())
                 .thenReturn(currentVersion);
+
+        when(property.getPropertyType()).thenReturn(PropertyType.APARTMENT);
 
         return property;
     }

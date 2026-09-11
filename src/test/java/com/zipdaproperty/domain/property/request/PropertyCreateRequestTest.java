@@ -1,5 +1,7 @@
 package com.zipdaproperty.domain.property.request;
 
+import com.zipdaproperty.domain.option.command.PropertyOptionCreateCommand;
+
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
@@ -70,6 +72,40 @@ class PropertyCreateRequestTest {
     }
 
     private PropertyCreateRequest readRequest(String fileIds) {
+        return readRequest(fileIds, "[]");
+    }
+
+    @Test
+    void toCommand_options_preservesCodesValuesAndOrder() {
+        PropertyCreateRequest request = readRequest("[\"1001\"]", """
+                [{"optionCode":"PARKING","optionValue":"2"},
+                 {"optionCode":"ELEVATOR","optionValue":null}]
+                """);
+
+        assertThat(VALIDATOR.validate(request)).isEmpty();
+        assertThat(request.toCommand().options()).containsExactly(
+                new PropertyOptionCreateCommand("PARKING", "2"),
+                new PropertyOptionCreateCommand("ELEVATOR", null)
+        );
+    }
+
+    @Test
+    void validate_emptyOptions_acceptsAndConverts() {
+        PropertyCreateRequest request = readRequest("[\"1001\"]", "[]");
+        assertThat(VALIDATOR.validate(request)).isEmpty();
+        assertThat(request.toCommand().options()).isEmpty();
+    }
+
+    @Test
+    void validate_nullOrAbsentOptions_rejects() {
+        PropertyCreateRequest request = readRequest("[\"1001\"]", "null");
+        assertThat(VALIDATOR.validate(request))
+                .anyMatch(violation -> violation.getPropertyPath().toString().equals("options"));
+        assertThat(VALIDATOR.validate(objectMapper.readValue("{}", PropertyCreateRequest.class)))
+                .anyMatch(violation -> violation.getPropertyPath().toString().equals("options"));
+    }
+
+    private PropertyCreateRequest readRequest(String fileIds, String options) {
         return objectMapper.readValue("""
                 {
                   "regionId": "10",
@@ -81,6 +117,7 @@ class PropertyCreateRequestTest {
                   "title": "등록 테스트",
                   "description": "매물 등록 테스트 설명",
                   "fileIds": %s,
+                  "options": %s,
                   "address": {
                     "roadAddress": "대구 수성구 달구벌대로 2450",
                     "jibunAddress": "대구광역시 수성구 범어동 123",
@@ -89,7 +126,7 @@ class PropertyCreateRequestTest {
                     "latitude": 35.859321
                   }
                 }
-                """.formatted(fileIds), PropertyCreateRequest.class);
+                """.formatted(fileIds, options), PropertyCreateRequest.class);
     }
 
     private String fileIdsJson(int count) {
