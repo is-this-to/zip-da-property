@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class PropertyOptionCommandService {
+
+    private static final String OPTION_REMOVED_FROM_REQUEST_REASON =
+            "OPTION_REMOVED_FROM_REQUEST";
 
     private final PropertyOptionRepository propertyOptionRepository;
     private final PropertyOptionHistoryRepository propertyOptionHistoryRepository;
@@ -74,32 +78,14 @@ public class PropertyOptionCommandService {
         Objects.requireNonNull(commands, "옵션 요청 목록은 필수입니다.");
         Objects.requireNonNull(actorContext, "옵션 생성에는 ActorContext가 필요합니다.");
 
-        LinkedHashSet<String> requestedCodes = validateCommands(commands);
-
-        List<PropertyTypeOption> activeTypeOptions =
-                queryRepository.findActiveTypeOptions(propertyType);
+        ValidatedOptionRequest validatedRequest = validateRequestedOptions(
+                propertyType,
+                commands
+        );
 
         if (commands.isEmpty()) {
-            validateRequiredOptions(requestedCodes, activeTypeOptions);
             return;
         }
-
-        Map<String, PropertyOptionCode> optionCodeByCode =
-                queryRepository.findActiveOptionCodesByCodes(List.copyOf(requestedCodes))
-                        .stream()
-                        .collect(Collectors.toMap(
-                                PropertyOptionCode::getOptionCode,
-                                Function.identity()
-                        ));
-
-        Map<Long, PropertyTypeOption> typeOptionByCodeId =
-                activeTypeOptions
-                        .stream()
-                        .collect(Collectors.toMap(
-                                PropertyTypeOption::getOptionCodeId,
-                                Function.identity(),
-                                (first, ignored) -> first
-                        ));
 
         Set<Long> activeOptionCodeIds =
                 queryRepository.findActiveOptionsByPropertyId(propertyId)
@@ -110,16 +96,13 @@ public class PropertyOptionCommandService {
         List<PropertyOption> propertyOptions = commands.stream()
                 .map(command -> createPropertyOption(
                         propertyId,
-                        propertyType,
                         command,
-                        optionCodeByCode,
-                        typeOptionByCodeId,
+                        validatedRequest.optionCodeByCode(),
+                        validatedRequest.typeOptionByCodeId(),
                         activeOptionCodeIds,
                         actorContext
                 ))
                 .toList();
-
-        validateRequiredOptions(requestedCodes, activeTypeOptions);
 
         List<PropertyOption> savedOptions = propertyOptionRepository.saveAll(propertyOptions);
         Instant occurredAt = Instant.now();
@@ -133,6 +116,119 @@ public class PropertyOptionCommandService {
                 ))
                 .toList();
         propertyOptionHistoryRepository.saveAll(histories);
+    }
+
+    @Transactional
+    public void synchronizeOptions(
+            Long propertyId,
+            Long propertyRevisionId,
+            PropertyType propertyType,
+            List<PropertyOptionCreateCommand> commands,
+            String changedFields,
+            ActorContext actorContext
+    ) {
+        Objects.requireNonNull(propertyId, "매물 ID는 필수입니다.");
+        validateHistoryContext(propertyRevisionId, changedFields);
+        Objects.requireNonNull(propertyType, "매물 유형은 필수입니다.");
+        Objects.requireNonNull(commands, "옵션 요청 목록은 필수입니다.");
+        Objects.requireNonNull(actorContext, "옵션 동기화에는 ActorContext가 필요합니다.");
+
+        ValidatedOptionRequest validatedRequest = validateRequestedOptions(
+                propertyType,
+                commands
+        );
+
+        List<PropertyOption> activeOptions =
+                queryRepository.findActiveOptionsByPropertyId(propertyId);
+        Map<Long, PropertyOption> activeOptionByCodeId = activeOptions.stream()
+                .collect(Collectors.toMap(
+                        PropertyOption::getOptionCodeId,
+                        Function.identity(),
+                        (first, ignored) -> {
+                            throw duplicatedOptionCodeId(first.getOptionCodeId());
+                        }
+                ));
+
+        Instant occurredAt = Instant.now();
+        List<PropertyOptionHistory> histories = new ArrayList<>();
+        List<PropertyOption> changedOptions = new ArrayList<>();
+
+        for (PropertyOptionCreateCommand command : commands) {
+            PropertyOptionCode optionCode =
+                    validatedRequest.optionCodeByCode().get(command.optionCode());
+            PropertyOption currentOption =
+                    activeOptionByCodeId.remove(optionCode.getOptionCodeId());
+            int targetDisplayOrder = validatedRequest.typeOptionByCodeId()
+                    .get(optionCode.getOptionCodeId())
+                    .getDisplayOrder();
+
+            if (currentOption == null) {
+                PropertyOption createdOption = new PropertyOption(
+                        propertyId,
+                        optionCode.getOptionCodeId(),
+                        command.optionValue(),
+                        targetDisplayOrder,
+                        actorContext
+                );
+                PropertyOption savedOption = propertyOptionRepository.save(createdOption);
+                histories.add(PropertyOptionHistory.create(
+                        propertyRevisionId,
+                        savedOption,
+                        changedFields,
+                        occurredAt,
+                        actorContext
+                ));
+                continue;
+            }
+
+            if (currentOption.getOptionValue().equals(command.optionValue())
+                    && currentOption.getDisplayOrder() == targetDisplayOrder) {
+                continue;
+            }
+
+            PropertyOptionHistory.Snapshot before =
+                    PropertyOptionHistory.Snapshot.from(currentOption);
+            currentOption.changeValueAndDisplayOrder(
+                    command.optionValue(),
+                    targetDisplayOrder,
+                    actorContext
+            );
+            changedOptions.add(currentOption);
+            histories.add(PropertyOptionHistory.update(
+                    propertyRevisionId,
+                    currentOption,
+                    changedFields,
+                    before,
+                    occurredAt,
+                    actorContext
+            ));
+        }
+
+        for (PropertyOption removedOption : activeOptionByCodeId.values()) {
+            PropertyOptionHistory.Snapshot before =
+                    PropertyOptionHistory.Snapshot.from(removedOption);
+            removedOption.softDelete(
+                    actorContext,
+                    occurredAt,
+                    OPTION_REMOVED_FROM_REQUEST_REASON
+            );
+            changedOptions.add(removedOption);
+            histories.add(PropertyOptionHistory.softDelete(
+                    propertyRevisionId,
+                    removedOption,
+                    changedFields,
+                    before,
+                    occurredAt,
+                    actorContext
+            ));
+        }
+
+        if (!changedOptions.isEmpty()) {
+            propertyOptionRepository.saveAll(changedOptions);
+        }
+        if (!histories.isEmpty()) {
+            propertyOptionHistoryRepository.saveAll(histories);
+        }
     }
 
     @Transactional
@@ -161,6 +257,10 @@ public class PropertyOptionCommandService {
                 writableOptionCode.getOptionCodeId(),
                 optionCode
         );
+
+        if (propertyOption.getOptionValue().equals(optionValue)) {
+            return;
+        }
 
         PropertyOptionHistory.Snapshot before =
                 PropertyOptionHistory.Snapshot.from(propertyOption);
@@ -239,9 +339,77 @@ public class PropertyOptionCommandService {
         return requestedCodes;
     }
 
+    private ValidatedOptionRequest validateRequestedOptions(
+            PropertyType propertyType,
+            List<PropertyOptionCreateCommand> commands
+    ) {
+        LinkedHashSet<String> requestedCodes = validateCommands(commands);
+        List<PropertyTypeOption> activeTypeOptions =
+                queryRepository.findActiveTypeOptions(propertyType);
+
+        Map<String, PropertyOptionCode> optionCodeByCode =
+                queryRepository.findActiveOptionCodesByCodes(List.copyOf(requestedCodes))
+                        .stream()
+                        .collect(Collectors.toMap(
+                                PropertyOptionCode::getOptionCode,
+                                Function.identity()
+                        ));
+        Map<Long, PropertyTypeOption> typeOptionByCodeId = activeTypeOptions.stream()
+                .collect(Collectors.toMap(
+                        PropertyTypeOption::getOptionCodeId,
+                        Function.identity(),
+                        (first, ignored) -> {
+                            throw duplicatedActiveTypeOption(
+                                    propertyType,
+                                    first.getOptionCodeId()
+                            );
+                        }
+                ));
+
+        for (PropertyOptionCreateCommand command : commands) {
+            validateRequestedOption(
+                    propertyType,
+                    command.optionCode(),
+                    optionCodeByCode,
+                    typeOptionByCodeId
+            );
+        }
+
+        validateRequiredOptions(requestedCodes, activeTypeOptions);
+        return new ValidatedOptionRequest(optionCodeByCode, typeOptionByCodeId);
+    }
+
+    private void validateRequestedOption(
+            PropertyType propertyType,
+            String requestedOptionCode,
+            Map<String, PropertyOptionCode> optionCodeByCode,
+            Map<Long, PropertyTypeOption> typeOptionByCodeId
+    ) {
+        PropertyOptionCode optionCode = optionCodeByCode.get(requestedOptionCode);
+        if (optionCode == null) {
+            throw new OptionCodeNotFoundException(
+                    "존재하지 않거나 비활성화된 옵션 코드입니다: "
+                            + requestedOptionCode
+            );
+        }
+        if (!typeOptionByCodeId.containsKey(optionCode.getOptionCodeId())) {
+            throw new OptionNotAllowedForPropertyTypeException(
+                    "해당 매물 유형에서 사용할 수 없는 옵션입니다: "
+                            + requestedOptionCode
+                            + " ("
+                            + propertyType
+                            + ")"
+            );
+        }
+        if (!optionCode.isRegistrationEnabled()) {
+            throw new OptionNotAllowedForPropertyTypeException(
+                    "등록할 수 없는 옵션입니다: " + requestedOptionCode
+            );
+        }
+    }
+
     private PropertyOption createPropertyOption(
             Long propertyId,
-            PropertyType propertyType,
             PropertyOptionCreateCommand command,
             Map<String, PropertyOptionCode> optionCodeByCode,
             Map<Long, PropertyTypeOption> typeOptionByCodeId,
@@ -249,31 +417,7 @@ public class PropertyOptionCommandService {
             ActorContext actorContext
     ) {
         PropertyOptionCode optionCode = optionCodeByCode.get(command.optionCode());
-
-        if (optionCode == null) {
-            throw new OptionCodeNotFoundException(
-                    "존재하지 않거나 비활성화된 옵션 코드입니다: "
-                            + command.optionCode()
-            );
-        }
-
         PropertyTypeOption typeOption = typeOptionByCodeId.get(optionCode.getOptionCodeId());
-
-        if (typeOption == null) {
-            throw new OptionNotAllowedForPropertyTypeException(
-                    "해당 매물 유형에서 사용할 수 없는 옵션입니다: "
-                            + command.optionCode()
-                            + " ("
-                            + propertyType
-                            + ")"
-            );
-        }
-
-        if (!optionCode.isRegistrationEnabled()) {
-            throw new OptionNotAllowedForPropertyTypeException(
-                    "등록할 수 없는 옵션입니다: " + command.optionCode()
-            );
-        }
 
         if (activeOptionCodeIds.contains(optionCode.getOptionCodeId())) {
             throw duplicatedOption(command.optionCode());
@@ -302,8 +446,24 @@ public class PropertyOptionCommandService {
             return;
         }
 
-        List<String> missingRequiredOptionCodes =
-                queryRepository.findActiveOptionCodesByIds(requiredOptionCodeIds)
+        List<PropertyOptionCode> activeRequiredOptionCodes =
+                queryRepository.findActiveOptionCodesByIds(requiredOptionCodeIds);
+        Set<Long> activeRequiredOptionCodeIds = activeRequiredOptionCodes.stream()
+                .map(PropertyOptionCode::getOptionCodeId)
+                .collect(Collectors.toSet());
+        List<Long> invalidRequiredOptionCodeIds = requiredOptionCodeIds.stream()
+                .filter(optionCodeId -> !activeRequiredOptionCodeIds.contains(optionCodeId))
+                .toList();
+
+        if (!invalidRequiredOptionCodeIds.isEmpty()) {
+            throw new BusinessException(
+                    CustomResponseCode.SYSTEM_ERROR,
+                    "필수 옵션 정책이 비활성 또는 삭제된 옵션 코드를 참조합니다: "
+                            + invalidRequiredOptionCodeIds
+            );
+        }
+
+        List<String> missingRequiredOptionCodes = activeRequiredOptionCodes
                         .stream()
                         .map(PropertyOptionCode::getOptionCode)
                         .filter(optionCode -> !requestedCodes.contains(optionCode))
@@ -439,5 +599,31 @@ public class PropertyOptionCommandService {
                 CustomResponseCode.DUPLICATED_RESOURCE,
                 "이미 등록된 옵션입니다: " + optionCode
         );
+    }
+
+    private BusinessException duplicatedOptionCodeId(Long optionCodeId) {
+        return new BusinessException(
+                CustomResponseCode.DUPLICATED_RESOURCE,
+                "동일한 활성 옵션이 여러 건 존재합니다: optionCodeId = " + optionCodeId
+        );
+    }
+
+    private BusinessException duplicatedActiveTypeOption(
+            PropertyType propertyType,
+            Long optionCodeId
+    ) {
+        return new BusinessException(
+                CustomResponseCode.SYSTEM_ERROR,
+                "활성 유형별 옵션 정책이 중복되었습니다: propertyType = "
+                        + propertyType
+                        + ", optionCodeId = "
+                        + optionCodeId
+        );
+    }
+
+    private record ValidatedOptionRequest(
+            Map<String, PropertyOptionCode> optionCodeByCode,
+            Map<Long, PropertyTypeOption> typeOptionByCodeId
+    ) {
     }
 }
