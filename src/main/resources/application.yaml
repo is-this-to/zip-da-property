@@ -59,6 +59,8 @@ property:
     fixed-delay-ms: ${PROPERTY_VERIFICATION_EXPIRATION_FIXED_DELAY_MS:60000}
   verification-evidence-cleanup:
     fixed-delay-ms: ${PROPERTY_VERIFICATION_EVIDENCE_CLEANUP_FIXED_DELAY_MS:900000}
+  verification-renewal-notification:
+    fixed-delay-ms: ${PROPERTY_VERIFICATION_RENEWAL_NOTIFICATION_FIXED_DELAY_MS:900000}
   kafka:
     topic: ${PROPERTY_KAFKA_TOPIC:zipda.property.events.v1}
   location:

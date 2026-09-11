@@ -34,6 +34,8 @@ public final class PropertyAuditActionCode {
 
     public static final String PROPERTY_VERIFICATION_EXPIRED =
             "PROPERTY_VERIFICATION_EXPIRED";
+    public static final String PROPERTY_VERIFICATION_RENEWAL_NOTIFIED =
+            "PROPERTY_VERIFICATION_RENEWAL_NOTIFIED";
 
     private PropertyAuditActionCode() {
     }

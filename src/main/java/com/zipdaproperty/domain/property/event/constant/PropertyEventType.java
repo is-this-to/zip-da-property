@@ -19,6 +19,8 @@ public final class PropertyEventType {
             "PROPERTY_VERIFICATION_REJECTED";
     public static final String PROPERTY_VERIFICATION_EXPIRED =
             "PROPERTY_VERIFICATION_EXPIRED";
+    public static final String PROPERTY_VERIFICATION_RENEWAL_DUE =
+            "PROPERTY_VERIFICATION_RENEWAL_DUE";
 
     private PropertyEventType() {
     }
