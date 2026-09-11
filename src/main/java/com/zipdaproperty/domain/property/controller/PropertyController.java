@@ -66,6 +66,8 @@ public class PropertyController {
                     일반 회원은 집주인 직접 등록만 가능하고,
                     중개사는 중개사 매물 등록만 가능합니다.
                     등록된 매물은 공개 검수 대기 상태로 생성됩니다.
+                    카카오 주소 결과의 법정동 코드와 좌표를 검증하고,
+                    정확 위치와 지도 공개용 비식별 위치를 함께 저장합니다.
                     동일한 Idempotency-Key로 동일 요청을 반복하면
                     최초 요청의 응답을 재사용합니다.
                     """
@@ -76,6 +78,10 @@ public class PropertyController {
             CustomResponseCode.INVALID_REQUEST,
             CustomResponseCode.INVALID_PRICE_COMBINATION,
             CustomResponseCode.PROPERTY_CREATE_NOT_ALLOWED,
+            CustomResponseCode.PROPERTY_REGION_NOT_FOUND,
+            CustomResponseCode.PROPERTY_REGION_BOUNDARY_NOT_FOUND,
+            CustomResponseCode.PROPERTY_LOCATION_REGION_MISMATCH,
+            CustomResponseCode.PROPERTY_PUBLIC_LOCATION_GENERATION_FAILED,
             CustomResponseCode.IDEMPOTENCY_KEY_REQUIRED,
             CustomResponseCode.IDEMPOTENCY_CONFLICT,
             CustomResponseCode.IDEMPOTENCY_REQUEST_IN_PROGRESS,
@@ -126,6 +132,8 @@ public class PropertyController {
                     반드시 동일해야 합니다.
                     DB의 현재 version이 요청 version과 다르면
                     수정하지 않고 VERSION_CONFLICT를 반환합니다.
+                    address를 전달한 경우에만 정확 주소와 공개 위치를
+                    다시 검증하고 변경합니다.
                     """
     )
     @CustomApiResponse({
@@ -137,6 +145,10 @@ public class PropertyController {
             CustomResponseCode.VERSION_CONFLICT,
             CustomResponseCode.PROPERTY_NOT_FOUND,
             CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+            CustomResponseCode.PROPERTY_REGION_NOT_FOUND,
+            CustomResponseCode.PROPERTY_REGION_BOUNDARY_NOT_FOUND,
+            CustomResponseCode.PROPERTY_LOCATION_REGION_MISMATCH,
+            CustomResponseCode.PROPERTY_PUBLIC_LOCATION_GENERATION_FAILED,
             CustomResponseCode.DB_ERROR,
             CustomResponseCode.SYSTEM_ERROR
     })

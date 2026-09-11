@@ -3,6 +3,7 @@ package com.zipdaproperty.domain.property.service;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyCreateCommand;
+import com.zipdaproperty.domain.property.command.PropertyAddressCommand;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublisherType;
 import com.zipdaproperty.domain.property.entity.Property;
@@ -10,6 +11,7 @@ import com.zipdaproperty.domain.property.entity.PropertyPublisherSnapshot;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
 import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
+import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
 import com.zipdaproperty.domain.property.repository.PropertyPublisherSnapshotRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
@@ -97,6 +99,9 @@ class PropertyCreateServiceTest {
             propertyKafkaEventPublisher =
             mock(PropertyKafkaEventPublisher.class);
 
+    private final PropertyAddressService propertyAddressService =
+            mock(PropertyAddressService.class);
+
     private final PropertyCreateService propertyCreateService =
             new PropertyCreateService(
                     propertyRepository,
@@ -108,7 +113,8 @@ class PropertyCreateServiceTest {
                     tsidGenerator,
                     objectMapper,
                     propertyAuditEventRecorder,
-                    propertyKafkaEventPublisher
+                    propertyKafkaEventPublisher,
+                    propertyAddressService
             );
 
     private final ActorContext ownerContext =
@@ -132,6 +138,19 @@ class PropertyCreateServiceTest {
 
         when(tsidGenerator.generate())
                 .thenReturn(PROPERTY_ID);
+
+        PreparedPropertyAddress preparedAddress =
+                mock(PreparedPropertyAddress.class);
+
+        when(preparedAddress.regionId())
+                .thenReturn(REGION_ID);
+
+        when(
+                propertyAddressService.prepare(
+                        eq(PROPERTY_ID),
+                        same(command.address())
+                )
+        ).thenReturn(preparedAddress);
 
         when(
                 propertyRepository.saveAndFlush(
@@ -191,6 +210,13 @@ class PropertyCreateServiceTest {
 
         verify(propertyRepository)
                 .saveAndFlush(any(Property.class));
+
+        verify(propertyAddressService)
+                .create(
+                        any(Property.class),
+                        same(preparedAddress),
+                        same(ownerContext)
+                );
 
         verify(propertyRevisionRepository)
                 .save(any(PropertyRevision.class));
@@ -385,7 +411,14 @@ class PropertyCreateServiceTest {
                 true,
                 false,
                 "Kafka 등록 테스트 매물",
-                "매물 등록과 감사 및 Kafka 발행을 검증합니다."
+                "매물 등록과 감사 및 Kafka 발행을 검증합니다.",
+                new PropertyAddressCommand(
+                        "대구 수성구 달구벌대로 2450",
+                        "대구광역시 수성구 범어동 123",
+                        "2726010100",
+                        new BigDecimal("128.625123"),
+                        new BigDecimal("35.859321")
+                )
         );
     }
 }

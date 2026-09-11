@@ -7,6 +7,7 @@ import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
 import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
+import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.request.PropertyUpdateRequest;
@@ -16,6 +17,8 @@ import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
@@ -29,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 
 @Service
 @RequiredArgsConstructor
@@ -61,6 +65,10 @@ public class PropertyUpdateService {
     private final PropertyKafkaEventPublisher
             propertyKafkaEventPublisher;
 
+    private final PropertyAddressService propertyAddressService;
+
+    private final EntityManager entityManager;
+
     @Transactional
     public PropertyUpdateResponse update(
             Long propertyId,
@@ -79,10 +87,21 @@ public class PropertyUpdateService {
                 request.version()
         );
 
+        PreparedPropertyAddress preparedAddress =
+                request.address() == null
+                        ? null
+                        : propertyAddressService.prepare(
+                                propertyId,
+                                request.address().toCommand()
+                        );
+
         PropertyUpdateCommand command =
                 propertyUpdateCommandFactory.create(
                         property,
-                        request
+                        request,
+                        preparedAddress == null
+                                ? null
+                                : preparedAddress.regionId()
                 );
 
         propertyUpdatePolicy.validate(command);
@@ -100,7 +119,8 @@ public class PropertyUpdateService {
                 detectChangedFields(
                         property,
                         command,
-                        request.changes().keySet()
+                        request.changes().keySet(),
+                        preparedAddress != null
                 );
 
         validateActualChanges(changedFields);
@@ -115,8 +135,22 @@ public class PropertyUpdateService {
                 actorContext
         );
 
-        Property savedProperty =
-                saveAndFlush(property);
+        boolean addressOnlyChange =
+                changedFields.size() == 1
+                        && changedFields.contains("address");
+
+        Property savedProperty = saveAndFlush(
+                property,
+                addressOnlyChange
+        );
+
+        if (preparedAddress != null) {
+            propertyAddressService.change(
+                    savedProperty,
+                    preparedAddress,
+                    actorContext
+            );
+        }
 
         String afterSnapshotJson =
                 objectMapper.writeValueAsString(savedProperty);
@@ -221,9 +255,10 @@ public class PropertyUpdateService {
     private List<String> detectChangedFields(
             Property property,
             PropertyUpdateCommand command,
-            Set<String> requestedFields
+            Set<String> requestedFields,
+            boolean addressChangeRequested
     ) {
-        return requestedFields
+        Set<String> changedFields = requestedFields
                 .stream()
                 .filter(
                         fieldName -> isActuallyChanged(
@@ -232,8 +267,22 @@ public class PropertyUpdateService {
                                 command
                         )
                 )
-                .sorted()
-                .toList();
+                .collect(java.util.stream.Collectors.toCollection(TreeSet::new));
+
+        if (
+                !Objects.equals(
+                        property.getRegionId(),
+                        command.regionId()
+                )
+        ) {
+            changedFields.add("regionId");
+        }
+
+        if (addressChangeRequested) {
+            changedFields.add("address");
+        }
+
+        return List.copyOf(changedFields);
     }
 
     private boolean isActuallyChanged(
@@ -412,8 +461,20 @@ public class PropertyUpdateService {
         }
     }
 
-    private Property saveAndFlush(Property property) {
+    private Property saveAndFlush(
+            Property property,
+            boolean forceVersionIncrement
+    ) {
         try {
+            if (forceVersionIncrement) {
+                entityManager.lock(
+                        property,
+                        LockModeType.PESSIMISTIC_FORCE_INCREMENT
+                );
+                entityManager.flush();
+                return property;
+            }
+
             return propertyRepository.saveAndFlush(property);
         } catch (
                 OptimisticLockingFailureException exception

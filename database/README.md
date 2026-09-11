@@ -11,6 +11,10 @@
 2. `002_create_property_favorite_table.sql`
 3. `003_create_property_option_tables.sql`
 4. `004_create_property_idempotency_table.sql`
+5. `005_create_property_file_table.sql`
+6. `006_create_property_audit_event_table.sql`
+7. `007_create_property_verification_tables.sql`
+8. `008_create_property_address_table.sql`
 
 ## 실행 전 확인
 
