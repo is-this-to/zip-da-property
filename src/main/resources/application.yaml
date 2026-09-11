@@ -118,3 +118,7 @@ external-api:
     connect-timeout: ${KAKAO_LOCAL_CONNECT_TIMEOUT:3s}
     read-timeout: ${KAKAO_LOCAL_READ_TIMEOUT:5s}
     page-size: ${KAKAO_LOCAL_PAGE_SIZE:10}
+  member:
+    base-url: ${MEMBER_SERVICE_BASE_URL:http://localhost:8081}
+    connect-timeout: ${MEMBER_SERVICE_CONNECT_TIMEOUT:800ms}
+    read-timeout: ${MEMBER_SERVICE_READ_TIMEOUT:800ms}

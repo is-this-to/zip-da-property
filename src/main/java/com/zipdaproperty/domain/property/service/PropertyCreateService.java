@@ -12,6 +12,8 @@ import com.zipdaproperty.domain.property.entity.PropertyStatusHistory;
 import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
 import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
+import com.zipdaproperty.domain.property.member.constant.MemberPermissionAction;
+import com.zipdaproperty.domain.property.member.service.MemberWritePermissionService;
 import com.zipdaproperty.domain.property.repository.PropertyPublisherSnapshotRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
@@ -101,6 +103,9 @@ public class PropertyCreateService {
 
     private final PropertyAddressService propertyAddressService;
 
+    private final MemberWritePermissionService
+            memberWritePermissionService;
+
     @Transactional
     public PropertyCreateResponse create(
             PropertyCreateCommand command,
@@ -109,6 +114,12 @@ public class PropertyCreateService {
         validateCreatePermission(
                 command.publisherType(),
                 actorContext
+        );
+
+        memberWritePermissionService.validate(
+                actorContext.memberId(),
+                actorContext.role(),
+                MemberPermissionAction.PROPERTY_CREATE
         );
 
         validateRegion(command.regionId());

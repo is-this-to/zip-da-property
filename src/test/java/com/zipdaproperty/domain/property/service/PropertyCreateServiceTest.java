@@ -12,6 +12,8 @@ import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
 import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
+import com.zipdaproperty.domain.property.member.service.MemberWritePermissionService;
+import com.zipdaproperty.domain.property.member.constant.MemberPermissionAction;
 import com.zipdaproperty.domain.property.repository.PropertyPublisherSnapshotRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
@@ -23,6 +25,7 @@ import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.id.TsidGenerator;
+import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -44,6 +47,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -102,6 +106,10 @@ class PropertyCreateServiceTest {
     private final PropertyAddressService propertyAddressService =
             mock(PropertyAddressService.class);
 
+    private final MemberWritePermissionService
+            memberWritePermissionService =
+            mock(MemberWritePermissionService.class);
+
     private final PropertyCreateService propertyCreateService =
             new PropertyCreateService(
                     propertyRepository,
@@ -114,7 +122,8 @@ class PropertyCreateServiceTest {
                     objectMapper,
                     propertyAuditEventRecorder,
                     propertyKafkaEventPublisher,
-                    propertyAddressService
+                    propertyAddressService,
+                    memberWritePermissionService
             );
 
     private final ActorContext ownerContext =
@@ -210,6 +219,13 @@ class PropertyCreateServiceTest {
 
         verify(propertyRepository)
                 .saveAndFlush(any(Property.class));
+
+        verify(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_CREATE
+                );
 
         verify(propertyAddressService)
                 .create(
@@ -375,6 +391,41 @@ class PropertyCreateServiceTest {
                         any(),
                         any()
                 );
+    }
+
+    @Test
+    void create_memberPermissionDenied_doesNotSave() {
+        PropertyCreateCommand command = createValidCommand();
+
+        doThrow(new BusinessException(
+                CustomResponseCode.MEMBER_PERMISSION_DENIED,
+                "권한 없음"
+        )).when(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_CREATE
+                );
+
+        assertThatThrownBy(() ->
+                propertyCreateService.create(
+                        command,
+                        ownerContext
+                )
+        )
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception ->
+                        ((BusinessException) exception)
+                                .getCustomResponseCode()
+                )
+                .isEqualTo(
+                        CustomResponseCode.MEMBER_PERMISSION_DENIED
+                );
+
+        verify(propertyRepository, never())
+                .saveAndFlush(any(Property.class));
+        verify(propertyRevisionRepository, never())
+                .save(any(PropertyRevision.class));
     }
 
     private PropertyCreateCommand createValidCommand() {
