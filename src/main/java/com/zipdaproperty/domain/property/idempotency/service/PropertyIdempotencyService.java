@@ -31,7 +31,7 @@ import java.util.function.Supplier;
 public class PropertyIdempotencyService {
 
     private static final String CREATE_PROPERTY_ENDPOINT =
-            "POST:/api/properties";
+            "POST:/api/property/properties";
 
     private static final String PROPERTY_RESOURCE_TYPE =
             "PROPERTY";
