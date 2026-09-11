@@ -17,6 +17,8 @@ import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
 import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
+import com.zipdaproperty.domain.property.member.service.MemberWritePermissionService;
+import com.zipdaproperty.domain.property.member.constant.MemberPermissionAction;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.request.PropertyUpdateRequest;
@@ -51,6 +53,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.same;
 import static org.mockito.Mockito.verify;
@@ -124,6 +127,10 @@ class PropertyUpdateServiceTest {
     private final PropertyAddressService propertyAddressService =
             mock(PropertyAddressService.class);
 
+    private final MemberWritePermissionService
+            memberWritePermissionService =
+            mock(MemberWritePermissionService.class);
+
     private final PropertyUpdateService propertyUpdateService =
             new PropertyUpdateService(
                     propertyRepository,
@@ -138,7 +145,8 @@ class PropertyUpdateServiceTest {
                     objectMapper,
                     propertyAuditEventRecorder,
                     propertyKafkaEventPublisher,
-                    propertyAddressService
+                    propertyAddressService,
+                    memberWritePermissionService
             );
 
     private final ActorContext ownerContext =
@@ -470,6 +478,13 @@ class PropertyUpdateServiceTest {
                         ),
                         eq(occurredAtCaptor.getValue()),
                         same(ownerContext)
+                );
+
+        verify(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_UPDATE
                 );
     }
 
@@ -813,6 +828,52 @@ class PropertyUpdateServiceTest {
         );
 
         verifyNoDomainEventsRecorded();
+    }
+
+    @Test
+    void update_memberPermissionDenied_doesNotChangeProperty() {
+        Property property = prepareExistingProperty(CURRENT_VERSION);
+
+        when(
+                propertyRepository
+                        .findByPropertyIdAndDeletedAtIsNull(PROPERTY_ID)
+        ).thenReturn(Optional.of(property));
+
+        doThrow(new BusinessException(
+                CustomResponseCode.MEMBER_PERMISSION_DENIED,
+                "권한 없음"
+        )).when(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_UPDATE
+                );
+
+        PropertyUpdateRequest request = new PropertyUpdateRequest(
+                CURRENT_VERSION,
+                Map.of("title", mock(JsonNode.class)),
+                null
+        );
+
+        assertThatThrownBy(() ->
+                propertyUpdateService.update(
+                        PROPERTY_ID,
+                        request,
+                        ownerContext
+                )
+        )
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception ->
+                        ((BusinessException) exception)
+                                .getCustomResponseCode()
+                )
+                .isEqualTo(
+                        CustomResponseCode.MEMBER_PERMISSION_DENIED
+                );
+
+        verify(property, never()).update(any(), any());
+        verify(propertyRevisionRepository, never())
+                .save(any(PropertyRevision.class));
     }
 
     @Test

@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -266,6 +267,10 @@ class PropertyVerificationServiceTest {
 
         assertThat(verification.getStatus()).isEqualTo(PropertyVerificationStatus.VERIFIED);
         assertThat(verification.getReviewerMemberId()).isEqualTo(ADMIN_ID);
+        assertThat(Duration.between(
+                verification.getVerifiedAt(),
+                verification.getExpiresAt()
+        )).isEqualTo(Duration.ofDays(30));
         assertThat(response.verificationRequestStatus()).isEqualTo(PropertyVerificationStatus.VERIFIED);
         verify(property).changeVerificationStatus(VerificationStatus.OWNER_VERIFIED, admin);
         verify(auditEventRecorder).recordPropertyAction(
@@ -275,6 +280,85 @@ class PropertyVerificationServiceTest {
         verify(kafkaEventPublisher).publishAfterCommit(
                 eq(PROPERTY_ID), eq(2L), eq(PropertyEventType.PROPERTY_VERIFICATION_APPROVED),
                 anyMap(), any(Instant.class), eq(admin)
+        );
+    }
+
+    @Test
+    void review_approveTenantVerification_changesPropertyToTenantVerified() {
+        ActorContext tenant = ActorContext.member(
+                OWNER_ID,
+                ActorRole.USER,
+                "tenant-verification-origin"
+        );
+        ActorContext admin = ActorContext.member(
+                ADMIN_ID,
+                ActorRole.CS_ADMIN,
+                "tenant-verification-review-test"
+        );
+        Property property = mock(Property.class);
+        PropertyRevision revision = mock(PropertyRevision.class);
+        PropertyVerification verification = PropertyVerification.submit(
+                VERIFICATION_ID,
+                PROPERTY_ID,
+                PropertyVerificationType.TENANT,
+                OWNER_ID,
+                1,
+                Instant.now(),
+                tenant
+        );
+
+        when(property.getPropertyId()).thenReturn(PROPERTY_ID);
+        when(property.getVersion()).thenReturn(
+                1L,
+                1L,
+                2L,
+                2L,
+                2L,
+                2L
+        );
+        when(property.getVerificationStatus()).thenReturn(
+                VerificationStatus.IN_REVIEW,
+                VerificationStatus.TENANT_VERIFIED,
+                VerificationStatus.TENANT_VERIFIED,
+                VerificationStatus.TENANT_VERIFIED
+        );
+        when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(PROPERTY_ID))
+                .thenReturn(Optional.of(property));
+        when(propertyRepository.saveAndFlush(property))
+                .thenReturn(property);
+        when(verificationRepository
+                .findByPropertyVerificationIdAndPropertyIdAndDeletedAtIsNull(
+                        VERIFICATION_ID,
+                        PROPERTY_ID
+                )).thenReturn(Optional.of(verification));
+        when(verificationRepository.saveAndFlush(verification))
+                .thenReturn(verification);
+        when(objectMapper.writeValueAsString(property))
+                .thenReturn("{\"before\":true}", "{\"after\":true}");
+        when(objectMapper.writeValueAsString(any(List.class)))
+                .thenReturn("[\"verificationStatus\"]");
+        when(revision.getPropertyRevisionId()).thenReturn(12L);
+        when(revisionRepository.saveAndFlush(any(PropertyRevision.class)))
+                .thenReturn(revision);
+
+        PropertyVerificationResponse response = service.review(
+                PROPERTY_ID,
+                VERIFICATION_ID,
+                new PropertyVerificationReviewRequest(
+                        1L,
+                        PropertyVerificationDecision.APPROVE,
+                        "임대차 증빙 확인 완료"
+                ),
+                admin
+        );
+
+        assertThat(response.verificationType())
+                .isEqualTo(PropertyVerificationType.TENANT);
+        assertThat(response.verificationStatus())
+                .isEqualTo(VerificationStatus.TENANT_VERIFIED);
+        verify(property).changeVerificationStatus(
+                VerificationStatus.TENANT_VERIFIED,
+                admin
         );
     }
 

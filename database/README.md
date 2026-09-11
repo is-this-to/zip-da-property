@@ -16,6 +16,7 @@
 7. `007_create_property_verification_tables.sql`
 8. `008_create_property_address_table.sql`
 9. `009_create_property_member_integration_tables.sql`
+10. `010_add_property_tenant_verification.sql`
 
 ## 실행 전 확인
 
@@ -26,10 +27,23 @@
 
 ## 현재 정책
 
-- 임차인 직접 등록(`DIRECT_TENANT`)은 지원하지 않습니다.
-- 임차인 인증(`TENANT_VERIFIED`)은 지원하지 않습니다.
+- USER의 임차인 직접 등록(`DIRECT_TENANT`)을 지원합니다.
+- `DIRECT_TENANT` 매물은 세입자 인증 승인 시 `TENANT_VERIFIED`로 전환합니다.
 - 입주 가능 상태 및 입주일은 관리하지 않습니다.
 - 전세대출 가능 여부는 관리하지 않습니다.
+
+## 세입자 등록·인증 확장
+
+- 기존 DB에는 애플리케이션 배포 전에
+  `010_add_property_tenant_verification.sql`을 실행합니다.
+- `property.publisher_type`과
+  `property_publisher_snapshot.publisher_type`에
+  `DIRECT_TENANT`를 허용합니다.
+- `property.verification_status`에 `TENANT_VERIFIED`를 허용하고,
+  `property_verification.verification_type`에 `TENANT`를 허용합니다.
+- 스크립트 적용 전에는 기존 애플리케이션 동작과 데이터가 유지됩니다.
+- 확장 후 새 Enum 값이 저장되면 이전 애플리케이션 버전에서는 이를 읽지 못할 수 있으므로
+  DB 확장 후 새 애플리케이션을 배포하고 이전 버전으로 임의 롤백하지 않습니다.
 
 ## Member 이벤트 연동
 

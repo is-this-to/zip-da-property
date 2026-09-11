@@ -14,6 +14,8 @@ import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
 import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
+import com.zipdaproperty.domain.property.member.service.MemberWritePermissionService;
+import com.zipdaproperty.domain.property.member.constant.MemberPermissionAction;
 import com.zipdaproperty.domain.property.repository.PropertyPublisherSnapshotRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
@@ -135,6 +137,9 @@ class PropertyCreateServiceTest {
     private final PropertyAddressService propertyAddressService =
             mock(PropertyAddressService.class);
 
+    private final MemberWritePermissionService
+            memberWritePermissionService =
+            mock(MemberWritePermissionService.class);
     private final ActorContext ownerContext =
             ActorContext.member(
                     AUTHOR_MEMBER_ID,
@@ -157,7 +162,8 @@ class PropertyCreateServiceTest {
                         propertyImageLinkService,
                         propertyAuditEventRecorder,
                         propertyKafkaEventPublisher,
-                        propertyAddressService
+                        propertyAddressService,
+                        memberWritePermissionService
                 );
 
         TransactionInterceptor interceptor =
@@ -224,6 +230,13 @@ class PropertyCreateServiceTest {
 
         order.verify(propertyRepository)
                 .saveAndFlush(any(Property.class));
+
+        verify(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_CREATE
+                );
 
         order.verify(propertyImageLinkService)
                 .linkImages(
@@ -315,6 +328,43 @@ class PropertyCreateServiceTest {
                 .isEqualTo(
                         auditOccurredAtCaptor.getValue()
                 );
+    }
+
+    @Test
+    void create_validTenantRequest_savesDirectTenantProperty() {
+        PropertyCreateCommand command =
+                createValidCommand(
+                        PublisherType.DIRECT_TENANT
+                );
+
+        stubValidCreatePersistence();
+
+        PropertyCreateResponse response =
+                propertyCreateService.create(
+                        command,
+                        ownerContext
+                );
+
+        assertThat(response.propertyId())
+                .isEqualTo(PROPERTY_ID);
+
+        verify(propertyRepository)
+                .saveAndFlush(
+                        argThat(property ->
+                                property.getPublisherType()
+                                        == PublisherType.DIRECT_TENANT
+                        )
+                );
+
+        verify(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_CREATE
+                );
+
+        verify(transactionManager)
+                .commit(transactionStatus);
     }
 
     @Test
@@ -536,6 +586,40 @@ class PropertyCreateServiceTest {
                 .commit(any());
     }
 
+    @Test
+    void create_agentWithDirectTenant_throwsAndDoesNotSave() {
+        PropertyCreateCommand command =
+                createValidCommand(
+                        PublisherType.DIRECT_TENANT
+                );
+
+        ActorContext agentContext =
+                ActorContext.member(
+                        2002L,
+                        ActorRole.AGENT,
+                        "property-create-tenant-role-test"
+                );
+
+        assertThatThrownBy(
+                () -> propertyCreateService.create(
+                        command,
+                        agentContext
+                )
+        ).isInstanceOf(BusinessException.class);
+
+        verify(regionRepository, never())
+                .findByRegionIdAndIsActiveTrue(any());
+
+        verify(propertyRepository, never())
+                .saveAndFlush(any(Property.class));
+
+        verify(transactionManager)
+                .rollback(transactionStatus);
+
+        verify(transactionManager, never())
+                .commit(any());
+    }
+
     private PreparedPropertyAddress stubValidCreatePersistence() {
         when(
                 regionRepository
@@ -600,11 +684,54 @@ class PropertyCreateServiceTest {
         return preparedAddress;
     }
 
+    @Test
+    void create_memberPermissionDenied_doesNotSave() {
+        PropertyCreateCommand command = createValidCommand();
+
+        doThrow(new BusinessException(
+                CustomResponseCode.MEMBER_PERMISSION_DENIED,
+                "권한 없음"
+        )).when(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_CREATE
+                );
+
+        assertThatThrownBy(() ->
+                propertyCreateService.create(
+                        command,
+                        ownerContext
+                )
+        )
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception ->
+                        ((BusinessException) exception)
+                                .getCustomResponseCode()
+                )
+                .isEqualTo(
+                        CustomResponseCode.MEMBER_PERMISSION_DENIED
+                );
+
+        verify(propertyRepository, never())
+                .saveAndFlush(any(Property.class));
+        verify(propertyRevisionRepository, never())
+                .save(any(PropertyRevision.class));
+    }
+
     private PropertyCreateCommand createValidCommand() {
+        return createValidCommand(
+                PublisherType.DIRECT_OWNER
+        );
+    }
+
+    private PropertyCreateCommand createValidCommand(
+            PublisherType publisherType
+    ) {
         return new PropertyCreateCommand(
                 REGION_ID,
                 null,
-                PublisherType.DIRECT_OWNER,
+                publisherType,
                 PropertyType.APARTMENT,
                 TransactionType.SALE,
                 500_000_000L,

@@ -10,6 +10,8 @@ import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
 import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
+import com.zipdaproperty.domain.property.member.constant.MemberPermissionAction;
+import com.zipdaproperty.domain.property.member.service.MemberWritePermissionService;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.request.PropertyUpdateRequest;
@@ -75,6 +77,9 @@ public class PropertyUpdateService {
 
     private final PropertyAddressService propertyAddressService;
 
+    private final MemberWritePermissionService
+            memberWritePermissionService;
+
     @Transactional
     public PropertyUpdateResponse update(
             Long propertyId,
@@ -87,6 +92,8 @@ public class PropertyUpdateService {
                 property,
                 actorContext
         );
+
+        validateMemberPermission(actorContext);
 
         Long currentPropertyVersion = property.getVersion();
 
@@ -320,6 +327,21 @@ public class PropertyUpdateService {
                     "매물 작성자 또는 허용된 관리자만 수정할 수 있습니다."
             );
         }
+    }
+
+    private void validateMemberPermission(
+            ActorContext actorContext
+    ) {
+        if (actorContext.role() != ActorRole.USER
+                && actorContext.role() != ActorRole.AGENT) {
+            return;
+        }
+
+        memberWritePermissionService.validate(
+                actorContext.memberId(),
+                actorContext.role(),
+                MemberPermissionAction.PROPERTY_UPDATE
+        );
     }
 
     private void validateRegion(Long regionId) {

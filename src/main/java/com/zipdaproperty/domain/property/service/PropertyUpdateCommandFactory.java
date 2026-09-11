@@ -65,7 +65,11 @@ public class PropertyUpdateCommandFactory {
     ) {
         Map<String, JsonNode> changes = request.changes();
 
-        validateChanges(changes, request.address() != null);
+        validateChanges(
+                changes,
+                request.address() != null,
+                request.fileIds() != null
+        );
         validateRegionChange(
                 changes,
                 request.address() != null,
@@ -219,15 +223,17 @@ public class PropertyUpdateCommandFactory {
 
     private void validateChanges(
             Map<String, JsonNode> changes,
-            boolean addressChangeRequested
+            boolean addressChangeRequested,
+            boolean imageChangeRequested
     ) {
         if (
                 (changes == null || changes.isEmpty())
                         && !addressChangeRequested
+                        && !imageChangeRequested
         ) {
             throw new BusinessException(
                     CustomResponseCode.INVALID_REQUEST,
-                    "changes 또는 address에는 최소 한 개 이상의 수정 내용이 필요합니다."
+                    "changes, fileIds 또는 address에는 최소 한 개 이상의 수정 내용이 필요합니다."
             );
         }
 
