@@ -118,6 +118,30 @@ public class PropertyOptionCommandService {
         propertyOptionHistoryRepository.saveAll(histories);
     }
 
+    @Transactional(readOnly = true)
+    public OptionSyncPlan prepareSync(
+            Long propertyId,
+            PropertyType propertyType,
+            List<PropertyOptionCreateCommand> commands
+    ) {
+        Objects.requireNonNull(propertyId, "매물 ID는 필수입니다.");
+        Objects.requireNonNull(propertyType, "매물 유형은 필수입니다.");
+        Objects.requireNonNull(commands, "옵션 요청 목록은 필수입니다.");
+
+        ValidatedOptionRequest validatedRequest = validateRequestedOptions(
+                propertyType,
+                commands
+        );
+        Map<Long, PropertyOption> activeOptionByCodeId =
+                mapActiveOptionsByCodeId(propertyId);
+
+        return new OptionSyncPlan(changesRequired(
+                commands,
+                validatedRequest,
+                activeOptionByCodeId
+        ));
+    }
+
     @Transactional
     public void synchronizeOptions(
             Long propertyId,
@@ -138,16 +162,8 @@ public class PropertyOptionCommandService {
                 commands
         );
 
-        List<PropertyOption> activeOptions =
-                queryRepository.findActiveOptionsByPropertyId(propertyId);
-        Map<Long, PropertyOption> activeOptionByCodeId = activeOptions.stream()
-                .collect(Collectors.toMap(
-                        PropertyOption::getOptionCodeId,
-                        Function.identity(),
-                        (first, ignored) -> {
-                            throw duplicatedOptionCodeId(first.getOptionCodeId());
-                        }
-                ));
+        Map<Long, PropertyOption> activeOptionByCodeId =
+                mapActiveOptionsByCodeId(propertyId);
 
         Instant occurredAt = Instant.now();
         List<PropertyOptionHistory> histories = new ArrayList<>();
@@ -377,6 +393,42 @@ public class PropertyOptionCommandService {
 
         validateRequiredOptions(requestedCodes, activeTypeOptions);
         return new ValidatedOptionRequest(optionCodeByCode, typeOptionByCodeId);
+    }
+
+    private Map<Long, PropertyOption> mapActiveOptionsByCodeId(Long propertyId) {
+        return queryRepository.findActiveOptionsByPropertyId(propertyId)
+                .stream()
+                .collect(Collectors.toMap(
+                        PropertyOption::getOptionCodeId,
+                        Function.identity(),
+                        (first, ignored) -> {
+                            throw duplicatedOptionCodeId(first.getOptionCodeId());
+                        }
+                ));
+    }
+
+    private boolean changesRequired(
+            List<PropertyOptionCreateCommand> commands,
+            ValidatedOptionRequest validatedRequest,
+            Map<Long, PropertyOption> activeOptionByCodeId
+    ) {
+        for (PropertyOptionCreateCommand command : commands) {
+            PropertyOptionCode optionCode =
+                    validatedRequest.optionCodeByCode().get(command.optionCode());
+            PropertyOption currentOption =
+                    activeOptionByCodeId.get(optionCode.getOptionCodeId());
+            int targetDisplayOrder = validatedRequest.typeOptionByCodeId()
+                    .get(optionCode.getOptionCodeId())
+                    .getDisplayOrder();
+
+            if (currentOption == null
+                    || !currentOption.getOptionValue().equals(command.optionValue())
+                    || currentOption.getDisplayOrder() != targetDisplayOrder) {
+                return true;
+            }
+        }
+
+        return activeOptionByCodeId.size() != commands.size();
     }
 
     private void validateRequestedOption(
@@ -625,5 +677,8 @@ public class PropertyOptionCommandService {
             Map<String, PropertyOptionCode> optionCodeByCode,
             Map<Long, PropertyTypeOption> typeOptionByCodeId
     ) {
+    }
+
+    public record OptionSyncPlan(boolean changesRequired) {
     }
 }

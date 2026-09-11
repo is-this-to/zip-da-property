@@ -91,6 +91,248 @@ class PropertyOptionCommandServiceTest {
     }
 
     @Test
+    void prepareSync_newOption_requiresChanges() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 3)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+
+        assertThat(prepareSync(List.of(command("ELEVATOR", "true")))
+                .changesRequired()).isTrue();
+    }
+
+    @Test
+    void prepareSync_changedValue_requiresChanges() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 3)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+        prepareActiveOptions(option(901L, 10L, "true", 3));
+
+        assertThat(prepareSync(List.of(command("ELEVATOR", "false")))
+                .changesRequired()).isTrue();
+    }
+
+    @Test
+    void prepareSync_changedDisplayOrder_requiresChanges() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 8)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+        prepareActiveOptions(option(901L, 10L, "true", 3));
+
+        assertThat(prepareSync(List.of(command("ELEVATOR", "true")))
+                .changesRequired()).isTrue();
+    }
+
+    @Test
+    void prepareSync_missingExistingOption_requiresChanges() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 1)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+        prepareActiveOptions(
+                option(901L, 10L, "true", 1),
+                option(902L, 20L, "false", 2)
+        );
+
+        assertThat(prepareSync(List.of(command("ELEVATOR", "true")))
+                .changesRequired()).isTrue();
+    }
+
+    @Test
+    void prepareSync_sameFinalState_doesNotRequireChanges() {
+        preparePolicies(
+                List.of(
+                        typeOption(10L, false, 1),
+                        typeOption(20L, false, 2)
+                ),
+                List.of(
+                        optionCode(10L, "ELEVATOR", true),
+                        optionCode(20L, "PARKING", true)
+                )
+        );
+        prepareActiveOptions(
+                option(901L, 10L, "true", 1),
+                option(902L, 20L, "false", 2)
+        );
+
+        assertThat(prepareSync(List.of(
+                command("ELEVATOR", "true"),
+                command("PARKING", "false")
+        )).changesRequired()).isFalse();
+    }
+
+    @Test
+    void prepareSync_emptyRequestWithActiveOption_requiresChanges() {
+        preparePolicies(List.of(), List.of());
+        prepareActiveOptions(option(901L, 10L, "true", 1));
+
+        assertThat(prepareSync(List.of()).changesRequired()).isTrue();
+    }
+
+    @Test
+    void prepareSync_emptyRequestWithoutActiveOption_doesNotRequireChanges() {
+        preparePolicies(List.of(), List.of());
+
+        assertThat(prepareSync(List.of()).changesRequired()).isFalse();
+    }
+
+    @Test
+    void prepareSync_missingRequiredOption_fails() {
+        preparePolicies(
+                List.of(typeOption(10L, true, 1)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+
+        assertThatThrownBy(() -> prepareSync(List.of()))
+                .isInstanceOf(OptionValueRequiredException.class);
+    }
+
+    @Test
+    void prepareSync_duplicateRequestCode_fails() {
+        assertThatThrownBy(() -> prepareSync(List.of(
+                command("ELEVATOR", "true"),
+                command("ELEVATOR", "false")
+        ))).isInstanceOfSatisfying(BusinessException.class, exception ->
+                assertThat(exception.getCustomResponseCode())
+                        .isEqualTo(CustomResponseCode.DUPLICATED_RESOURCE)
+        );
+    }
+
+    @Test
+    void prepareSync_duplicateActiveTypePolicy_fails() {
+        preparePolicies(
+                List.of(
+                        typeOption(10L, false, 1),
+                        typeOption(10L, true, 2)
+                ),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+
+        assertThatThrownBy(() -> prepareSync(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getCustomResponseCode())
+                                .isEqualTo(CustomResponseCode.SYSTEM_ERROR)
+                );
+    }
+
+    @Test
+    void prepareSync_duplicateActivePropertyOption_fails() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 1)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+        prepareActiveOptions(
+                option(901L, 10L, "true", 1),
+                option(902L, 10L, "false", 1)
+        );
+
+        assertThatThrownBy(() -> prepareSync(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getCustomResponseCode())
+                                .isEqualTo(CustomResponseCode.DUPLICATED_RESOURCE)
+                );
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", " ", "TRUE", "False", "1"})
+    void prepareSync_invalidOptionValue_fails(String optionValue) {
+        assertThatThrownBy(() -> prepareSync(List.of(
+                command("ELEVATOR", optionValue)
+        ))).isInstanceOfAny(
+                OptionValueRequiredException.class,
+                OptionValueInvalidException.class
+        );
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", " "})
+    void prepareSync_nullOrBlankOptionCode_fails(String optionCode) {
+        assertThatThrownBy(() -> prepareSync(List.of(command(optionCode, "true"))))
+                .isInstanceOf(OptionCodeNotFoundException.class);
+    }
+
+    @Test
+    void prepareSync_unknownOrInactiveOptionCode_fails() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 1)),
+                List.of()
+        );
+
+        assertThatThrownBy(() -> prepareSync(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOf(OptionCodeNotFoundException.class);
+    }
+
+    @Test
+    void prepareSync_optionNotAllowedForPropertyType_fails() {
+        preparePolicies(
+                List.of(),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+
+        assertThatThrownBy(() -> prepareSync(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOf(OptionNotAllowedForPropertyTypeException.class);
+    }
+
+    @Test
+    void prepareSync_registrationDisabledOption_fails() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 1)),
+                List.of(optionCode(10L, "ELEVATOR", false))
+        );
+
+        assertThatThrownBy(() -> prepareSync(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOf(OptionNotAllowedForPropertyTypeException.class);
+    }
+
+    @Test
+    void prepareSync_nullPropertyId_fails() {
+        assertThatThrownBy(() -> service.prepareSync(
+                null,
+                PROPERTY_TYPE,
+                List.of()
+        )).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void prepareSync_nullPropertyType_fails() {
+        assertThatThrownBy(() -> service.prepareSync(
+                PROPERTY_ID,
+                null,
+                List.of()
+        )).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void prepareSync_nullCommands_fails() {
+        assertThatThrownBy(() -> service.prepareSync(
+                PROPERTY_ID,
+                PROPERTY_TYPE,
+                null
+        )).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void prepareSync_neverWritesOptionsOrHistories() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 2)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+        prepareActiveOptions(option(901L, 10L, "false", 1));
+
+        prepareSync(List.of(command("ELEVATOR", "true")));
+
+        verifyNoPersistenceInteractions();
+        verify(propertyOptionRepository, never()).save(any(PropertyOption.class));
+        verify(propertyOptionRepository, never()).saveAll(anyList());
+        verify(historyRepository, never()).save(any(PropertyOptionHistory.class));
+        verify(historyRepository, never()).saveAll(anyList());
+    }
+
+    @Test
     void synchronizeOptions_newOption_createsOptionAndCreateHistory() {
         PropertyOptionCode code = optionCode(10L, "ELEVATOR", true);
         PropertyTypeOption policy = typeOption(10L, false, 3);
@@ -422,6 +664,16 @@ class PropertyOptionCommandServiceTest {
                 commands,
                 CHANGED_FIELDS,
                 ACTOR_CONTEXT
+        );
+    }
+
+    private PropertyOptionCommandService.OptionSyncPlan prepareSync(
+            List<PropertyOptionCreateCommand> commands
+    ) {
+        return service.prepareSync(
+                PROPERTY_ID,
+                PROPERTY_TYPE,
+                commands
         );
     }
 
