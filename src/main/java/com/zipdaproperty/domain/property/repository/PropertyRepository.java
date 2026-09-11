@@ -3,6 +3,7 @@ package com.zipdaproperty.domain.property.repository;
 import com.zipdaproperty.domain.property.entity.Property;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface PropertyRepository
@@ -20,5 +21,9 @@ public interface PropertyRepository
 
     Optional<Property> findByPropertyIdAndDeletedAtIsNotNull(
             Long propertyId
+    );
+
+    List<Property> findAllByAuthorMemberIdAndDeletedAtIsNull(
+            Long authorMemberId
     );
 }

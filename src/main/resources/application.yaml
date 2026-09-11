@@ -50,7 +50,7 @@ spring:
     consumer:
       group-id: zip-da-property
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      # 아래에 추가설정 필요
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
 property:
   kafka:
@@ -66,6 +66,12 @@ property:
       secret-version: ${PROPERTY_PUBLIC_LOCATION_SECRET_VERSION:v1}
       min-distance-meters: ${PROPERTY_PUBLIC_LOCATION_MIN_DISTANCE_METERS:80}
       max-distance-meters: ${PROPERTY_PUBLIC_LOCATION_MAX_DISTANCE_METERS:180}
+
+member:
+  kafka:
+    enabled: ${MEMBER_KAFKA_ENABLED:false}
+    topic: ${MEMBER_KAFKA_TOPIC:zipda.member.events.v1}
+    consumer-group: ${MEMBER_KAFKA_CONSUMER_GROUP:zip-da-property-member-events}
 # Springdoc Openapi
 springdoc:
   default-consumes-media-type: application/json

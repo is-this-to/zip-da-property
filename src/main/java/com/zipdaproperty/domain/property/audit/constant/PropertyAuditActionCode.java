@@ -14,6 +14,9 @@ public final class PropertyAuditActionCode {
     public static final String PROPERTY_PUBLICATION_STATUS_CHANGED =
             "PROPERTY_PUBLICATION_STATUS_CHANGED";
 
+    public static final String PROPERTY_HIDDEN_BY_MEMBER_WITHDRAWAL =
+            "PROPERTY_HIDDEN_BY_MEMBER_WITHDRAWAL";
+
     public static final String PROPERTY_SOFT_DELETED =
             "PROPERTY_SOFT_DELETED";
 
