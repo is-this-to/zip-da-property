@@ -33,6 +33,9 @@ public class PropertyVerificationPolicy {
         if (property.getPublisherType() == PublisherType.DIRECT_OWNER
                 && actorContext.role() == ActorRole.USER) {
             type = PropertyVerificationType.OWNER;
+        } else if (property.getPublisherType() == PublisherType.DIRECT_TENANT
+                && actorContext.role() == ActorRole.USER) {
+            type = PropertyVerificationType.TENANT;
         } else if (property.getPublisherType() == PublisherType.AGENT_BROKERAGE
                 && actorContext.role() == ActorRole.AGENT) {
             type = PropertyVerificationType.AGENT_BROKERAGE;
