@@ -41,4 +41,15 @@ public interface PropertyRepository
     Optional<Property> findForVerificationExpiration(
             @Param("propertyId") Long propertyId
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select property
+            from Property property
+            where property.propertyId = :propertyId
+              and property.deletedAt is null
+            """)
+    Optional<Property> findForVerificationChange(
+            @Param("propertyId") Long propertyId
+    );
 }

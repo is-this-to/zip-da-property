@@ -105,7 +105,7 @@ class PropertyVerificationServiceTest {
                 VerificationStatus.IN_REVIEW,
                 VerificationStatus.IN_REVIEW
         );
-        when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(PROPERTY_ID)).thenReturn(Optional.of(property));
+        when(propertyRepository.findForVerificationChange(PROPERTY_ID)).thenReturn(Optional.of(property));
         when(propertyRepository.saveAndFlush(property)).thenReturn(property);
         when(verificationRepository.existsByPropertyIdAndVerificationTypeAndStatusInAndDeletedAtIsNull(
                 eq(PROPERTY_ID), eq(PropertyVerificationType.OWNER), any()
@@ -162,7 +162,7 @@ class PropertyVerificationServiceTest {
         Property property = prepareSubmittableProperty();
         PropertyFile file = mock(PropertyFile.class);
 
-        when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(PROPERTY_ID))
+        when(propertyRepository.findForVerificationChange(PROPERTY_ID))
                 .thenReturn(Optional.of(property));
         when(verificationRepository
                 .existsByPropertyIdAndVerificationTypeAndStatusInAndDeletedAtIsNull(
@@ -199,7 +199,7 @@ class PropertyVerificationServiceTest {
         Property property = prepareSubmittableProperty();
         PropertyFile file = mock(PropertyFile.class);
 
-        when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(PROPERTY_ID))
+        when(propertyRepository.findForVerificationChange(PROPERTY_ID))
                 .thenReturn(Optional.of(property));
         when(verificationRepository
                 .existsByPropertyIdAndVerificationTypeAndStatusInAndDeletedAtIsNull(
@@ -247,7 +247,7 @@ class PropertyVerificationServiceTest {
                 VerificationStatus.OWNER_VERIFIED,
                 VerificationStatus.OWNER_VERIFIED
         );
-        when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(PROPERTY_ID)).thenReturn(Optional.of(property));
+        when(propertyRepository.findForVerificationChange(PROPERTY_ID)).thenReturn(Optional.of(property));
         when(propertyRepository.saveAndFlush(property)).thenReturn(property);
         when(verificationRepository.findByPropertyVerificationIdAndPropertyIdAndDeletedAtIsNull(
                 VERIFICATION_ID, PROPERTY_ID
@@ -322,7 +322,7 @@ class PropertyVerificationServiceTest {
                 VerificationStatus.TENANT_VERIFIED,
                 VerificationStatus.TENANT_VERIFIED
         );
-        when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(PROPERTY_ID))
+        when(propertyRepository.findForVerificationChange(PROPERTY_ID))
                 .thenReturn(Optional.of(property));
         when(propertyRepository.saveAndFlush(property))
                 .thenReturn(property);
@@ -360,6 +360,284 @@ class PropertyVerificationServiceTest {
                 VerificationStatus.TENANT_VERIFIED,
                 admin
         );
+    }
+
+    @Test
+    void submit_verifiedPropertyWithinRenewalWindow_keepsCurrentVerificationStatus() {
+        ActorContext owner = ActorContext.member(
+                OWNER_ID,
+                ActorRole.USER,
+                "verification-renewal-submit"
+        );
+        Property property = mock(Property.class);
+        PropertyFile file = mock(PropertyFile.class);
+        PropertyVerification previousVerification = approvedVerification(
+                VERIFICATION_ID,
+                1,
+                Instant.now().plus(6, java.time.temporal.ChronoUnit.DAYS)
+        );
+        Long renewalVerificationId = VERIFICATION_ID + 10L;
+
+        when(property.getPropertyId()).thenReturn(PROPERTY_ID);
+        when(property.getVersion()).thenReturn(5L);
+        when(property.getAuthorMemberId()).thenReturn(OWNER_ID);
+        when(property.getPublisherType()).thenReturn(PublisherType.DIRECT_OWNER);
+        when(property.getVerificationStatus()).thenReturn(
+                VerificationStatus.OWNER_VERIFIED
+        );
+        when(propertyRepository.findForVerificationChange(PROPERTY_ID))
+                .thenReturn(Optional.of(property));
+        when(verificationRepository
+                .findTopByPropertyIdAndVerificationTypeOrderByVerificationVersionDesc(
+                        PROPERTY_ID,
+                        PropertyVerificationType.OWNER
+                )).thenReturn(Optional.of(previousVerification));
+        when(verificationRepository
+                .existsByPropertyIdAndVerificationTypeAndStatusInAndDeletedAtIsNull(
+                        eq(PROPERTY_ID),
+                        eq(PropertyVerificationType.OWNER),
+                        any()
+                )).thenReturn(false);
+        when(file.getOwnerMemberId()).thenReturn(OWNER_ID);
+        when(file.getFilePurpose()).thenReturn(FilePurpose.VERIFICATION);
+        when(file.isVerificationCompleted()).thenReturn(true);
+        when(propertyFileRepository.findForVerificationLink(FILE_ID))
+                .thenReturn(Optional.of(file));
+        when(tsidGenerator.generate())
+                .thenReturn(renewalVerificationId, EVIDENCE_ID);
+        when(verificationRepository.saveAndFlush(any(PropertyVerification.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        PropertyVerificationResponse response = service.submit(
+                PROPERTY_ID,
+                new PropertyVerificationSubmitRequest(
+                        5L,
+                        List.of(new PropertyVerificationEvidenceRequest(
+                                FILE_ID,
+                                PropertyVerificationEvidenceType
+                                        .REGISTRY_DOCUMENT,
+                                0
+                        ))
+                ),
+                owner
+        );
+
+        assertThat(response.propertyVerificationId())
+                .isEqualTo(renewalVerificationId);
+        assertThat(response.verificationRequestStatus())
+                .isEqualTo(PropertyVerificationStatus.IN_REVIEW);
+        assertThat(response.verificationStatus())
+                .isEqualTo(VerificationStatus.OWNER_VERIFIED);
+        ArgumentCaptor<PropertyVerification> verificationCaptor =
+                ArgumentCaptor.forClass(PropertyVerification.class);
+        verify(verificationRepository)
+                .saveAndFlush(verificationCaptor.capture());
+        assertThat(verificationCaptor.getValue().getVerificationVersion())
+                .isEqualTo(2);
+        verify(property, never()).changeVerificationStatus(any(), any());
+        verify(propertyRepository, never()).saveAndFlush(any(Property.class));
+        verify(revisionRepository, never()).saveAndFlush(any());
+        verify(statusHistoryRepository, never()).save(any());
+        verify(kafkaEventPublisher).publishAfterCommit(
+                eq(PROPERTY_ID),
+                eq(5L),
+                eq(PropertyEventType.PROPERTY_VERIFICATION_REQUESTED),
+                anyMap(),
+                any(Instant.class),
+                eq(owner)
+        );
+    }
+
+    @Test
+    void review_approveRenewal_supersedesPreviousAndKeepsPropertyVerified() {
+        ActorContext owner = ActorContext.member(
+                OWNER_ID,
+                ActorRole.USER,
+                "verification-renewal-origin"
+        );
+        ActorContext admin = ActorContext.member(
+                ADMIN_ID,
+                ActorRole.CS_ADMIN,
+                "verification-renewal-approve"
+        );
+        Property property = mock(Property.class);
+        PropertyVerification previousVerification = approvedVerification(
+                VERIFICATION_ID,
+                1,
+                Instant.now().plus(6, java.time.temporal.ChronoUnit.DAYS)
+        );
+        Long renewalVerificationId = VERIFICATION_ID + 10L;
+        PropertyVerification renewalVerification = PropertyVerification.submit(
+                renewalVerificationId,
+                PROPERTY_ID,
+                PropertyVerificationType.OWNER,
+                OWNER_ID,
+                2,
+                Instant.now(),
+                owner
+        );
+
+        when(property.getPropertyId()).thenReturn(PROPERTY_ID);
+        when(property.getVersion()).thenReturn(5L);
+        when(property.getVerificationStatus()).thenReturn(
+                VerificationStatus.OWNER_VERIFIED
+        );
+        when(propertyRepository.findForVerificationChange(PROPERTY_ID))
+                .thenReturn(Optional.of(property));
+        when(verificationRepository
+                .findByPropertyVerificationIdAndPropertyIdAndDeletedAtIsNull(
+                        renewalVerificationId,
+                        PROPERTY_ID
+                )).thenReturn(Optional.of(renewalVerification));
+        when(verificationRepository
+                .findTopByPropertyIdAndVerificationTypeAndStatusAndPropertyVerificationIdNotAndDeletedAtIsNullOrderByVerificationVersionDesc(
+                        PROPERTY_ID,
+                        PropertyVerificationType.OWNER,
+                        PropertyVerificationStatus.VERIFIED,
+                        renewalVerificationId
+                )).thenReturn(Optional.of(previousVerification));
+        when(verificationRepository.saveAndFlush(any(PropertyVerification.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(objectMapper.writeValueAsString(property))
+                .thenReturn("{\"before\":true}");
+
+        PropertyVerificationResponse response = service.review(
+                PROPERTY_ID,
+                renewalVerificationId,
+                new PropertyVerificationReviewRequest(
+                        5L,
+                        PropertyVerificationDecision.APPROVE,
+                        "재인증 서류 확인 완료"
+                ),
+                admin
+        );
+
+        assertThat(response.verificationRequestStatus())
+                .isEqualTo(PropertyVerificationStatus.VERIFIED);
+        assertThat(response.verificationStatus())
+                .isEqualTo(VerificationStatus.OWNER_VERIFIED);
+        assertThat(previousVerification.getStatus())
+                .isEqualTo(PropertyVerificationStatus.EXPIRED);
+        assertThat(previousVerification.getResultCode())
+                .isEqualTo("SUPERSEDED_BY_RENEWAL");
+        verify(property, never()).changeVerificationStatus(any(), any());
+        verify(propertyRepository, never()).saveAndFlush(any(Property.class));
+        verify(revisionRepository, never()).saveAndFlush(any());
+        verify(statusHistoryRepository, never()).save(any());
+        verify(kafkaEventPublisher).publishAfterCommit(
+                eq(PROPERTY_ID),
+                eq(5L),
+                eq(PropertyEventType.PROPERTY_VERIFICATION_APPROVED),
+                anyMap(),
+                any(Instant.class),
+                eq(admin)
+        );
+    }
+
+    @Test
+    void review_rejectRenewal_keepsPreviousVerificationAndPropertyVerified() {
+        ActorContext owner = ActorContext.member(
+                OWNER_ID,
+                ActorRole.USER,
+                "verification-renewal-origin"
+        );
+        ActorContext admin = ActorContext.member(
+                ADMIN_ID,
+                ActorRole.CS_ADMIN,
+                "verification-renewal-reject"
+        );
+        Property property = mock(Property.class);
+        Long renewalVerificationId = VERIFICATION_ID + 10L;
+        PropertyVerification renewalVerification = PropertyVerification.submit(
+                renewalVerificationId,
+                PROPERTY_ID,
+                PropertyVerificationType.OWNER,
+                OWNER_ID,
+                2,
+                Instant.now(),
+                owner
+        );
+
+        when(property.getPropertyId()).thenReturn(PROPERTY_ID);
+        when(property.getVersion()).thenReturn(5L);
+        when(property.getVerificationStatus()).thenReturn(
+                VerificationStatus.OWNER_VERIFIED
+        );
+        when(propertyRepository.findForVerificationChange(PROPERTY_ID))
+                .thenReturn(Optional.of(property));
+        when(verificationRepository
+                .findByPropertyVerificationIdAndPropertyIdAndDeletedAtIsNull(
+                        renewalVerificationId,
+                        PROPERTY_ID
+                )).thenReturn(Optional.of(renewalVerification));
+        when(verificationRepository.saveAndFlush(renewalVerification))
+                .thenReturn(renewalVerification);
+        when(objectMapper.writeValueAsString(property))
+                .thenReturn("{\"before\":true}");
+
+        PropertyVerificationResponse response = service.review(
+                PROPERTY_ID,
+                renewalVerificationId,
+                new PropertyVerificationReviewRequest(
+                        5L,
+                        PropertyVerificationDecision.REJECT,
+                        "재인증 증빙이 부족합니다."
+                ),
+                admin
+        );
+
+        assertThat(response.verificationRequestStatus())
+                .isEqualTo(PropertyVerificationStatus.REJECTED);
+        assertThat(response.verificationStatus())
+                .isEqualTo(VerificationStatus.OWNER_VERIFIED);
+        verify(verificationRepository, never())
+                .findTopByPropertyIdAndVerificationTypeAndStatusAndPropertyVerificationIdNotAndDeletedAtIsNullOrderByVerificationVersionDesc(
+                        any(), any(), any(), any()
+                );
+        verify(property, never()).changeVerificationStatus(any(), any());
+        verify(propertyRepository, never()).saveAndFlush(any(Property.class));
+        verify(revisionRepository, never()).saveAndFlush(any());
+        verify(statusHistoryRepository, never()).save(any());
+        verify(kafkaEventPublisher).publishAfterCommit(
+                eq(PROPERTY_ID),
+                eq(5L),
+                eq(PropertyEventType.PROPERTY_VERIFICATION_REJECTED),
+                anyMap(),
+                any(Instant.class),
+                eq(admin)
+        );
+    }
+
+    private PropertyVerification approvedVerification(
+            Long verificationId,
+            int verificationVersion,
+            Instant expiresAt
+    ) {
+        ActorContext owner = ActorContext.member(
+                OWNER_ID,
+                ActorRole.USER,
+                "approved-verification-origin"
+        );
+        PropertyVerification verification = PropertyVerification.submit(
+                verificationId,
+                PROPERTY_ID,
+                PropertyVerificationType.OWNER,
+                OWNER_ID,
+                verificationVersion,
+                expiresAt.minus(30, java.time.temporal.ChronoUnit.DAYS),
+                owner
+        );
+        verification.approve(
+                "승인",
+                expiresAt.minus(30, java.time.temporal.ChronoUnit.DAYS),
+                expiresAt,
+                ActorContext.member(
+                        ADMIN_ID,
+                        ActorRole.CS_ADMIN,
+                        "approved-verification-review"
+                )
+        );
+        return verification;
     }
 
     private Property prepareSubmittableProperty() {

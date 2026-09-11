@@ -13,6 +13,8 @@ import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import org.springframework.stereotype.Component;
 
 import java.util.Objects;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 @Component
 public class PropertyVerificationPolicy {
@@ -49,13 +51,42 @@ public class PropertyVerificationPolicy {
         VerificationStatus status = property.getVerificationStatus();
         if (status != VerificationStatus.UNVERIFIED
                 && status != VerificationStatus.REJECTED
-                && status != VerificationStatus.EXPIRED) {
+                && status != VerificationStatus.EXPIRED
+                && !isVerified(status)) {
             throw new BusinessException(
                     CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
                     "현재 상태에서는 새 검증을 신청할 수 없습니다."
             );
         }
         return type;
+    }
+
+    public void validateRenewalWindow(
+            PropertyVerification latestVerification,
+            PropertyVerificationType expectedType,
+            Instant currentTime
+    ) {
+        boolean renewable = latestVerification != null
+                && latestVerification.getVerificationType() == expectedType
+                && latestVerification.getStatus()
+                == PropertyVerificationStatus.VERIFIED
+                && latestVerification.getExpiresAt() != null
+                && latestVerification.getExpiresAt().isAfter(currentTime)
+                && !latestVerification.getExpiresAt()
+                .minus(7, ChronoUnit.DAYS)
+                .isAfter(currentTime);
+        if (!renewable) {
+            throw new BusinessException(
+                    CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
+                    "인증 만료 7일 전부터 재인증을 신청할 수 있습니다."
+            );
+        }
+    }
+
+    public boolean isVerified(VerificationStatus status) {
+        return status == VerificationStatus.OWNER_VERIFIED
+                || status == VerificationStatus.TENANT_VERIFIED
+                || status == VerificationStatus.AGENT_VERIFIED;
     }
 
     public void validateReview(PropertyVerification verification, ActorContext actorContext) {

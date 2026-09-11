@@ -19,6 +19,7 @@
 10. `010_add_property_tenant_verification.sql`
 11. `011_add_property_verification_expiration_index.sql`
 12. `012_add_property_verification_evidence_cleanup_indexes.sql`
+13. `013_add_property_verification_renewal_notification.sql`
 
 ## 실행 전 확인
 
@@ -75,6 +76,21 @@
   함께 기록합니다.
 - Member 이벤트에는 이메일·전화번호·서류 원문 등 개인정보를 포함하거나
   Property DB에 복제하지 않습니다.
+
+## 재인증 안내와 재인증 신청
+
+- 애플리케이션 배포 전에
+  `013_add_property_verification_renewal_notification.sql`을 한 번 실행합니다.
+- 유효 인증의 만료 7일 전부터 아직 안내하지 않은 인증을 최대 100건씩 조회하여
+  `PROPERTY_VERIFICATION_RENEWAL_DUE` Kafka 이벤트를 직접 발행합니다.
+- `renewal_notified_at`으로 동일 인증 주기의 중복 안내를 방지합니다.
+- 재인증 심사 중에는 기존 인증을 원래 만료일까지 유지합니다.
+- 재인증 승인 시 기존 인증 요청은 대체 처리하고 새 인증의 유효기간을 30일로 계산합니다.
+- 재인증 반려 시 기존 인증은 원래 만료일까지 유지합니다.
+- 기본 실행 간격은 15분이며
+  `PROPERTY_VERIFICATION_RENEWAL_NOTIFICATION_FIXED_DELAY_MS`로 변경할 수 있습니다.
+- 이 기능은 Outbox를 사용하지 않으므로 Kafka 장애 시 발행 유실 가능성이 남습니다.
+  실패 재처리가 필요해지면 별도 전달 보장 저장소를 추가해야 합니다.
 
 ## 검증 증빙 30일 보관 및 정리
 

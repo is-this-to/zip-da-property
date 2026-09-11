@@ -45,6 +45,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -73,9 +74,26 @@ public class PropertyVerificationService {
             PropertyVerificationSubmitRequest request,
             ActorContext actorContext
     ) {
-        Property property = findProperty(propertyId);
+        Property property = findPropertyForVerificationChange(propertyId);
         propertyVersionPolicy.validate(property.getVersion(), request.version());
+        Instant occurredAt = Instant.now();
         PropertyVerificationType type = verificationPolicy.validateSubmission(property, actorContext);
+        Optional<PropertyVerification> latestVerification =
+                verificationRepository
+                        .findTopByPropertyIdAndVerificationTypeOrderByVerificationVersionDesc(
+                                propertyId,
+                                type
+                        );
+        boolean renewal = verificationPolicy.isVerified(
+                property.getVerificationStatus()
+        );
+        if (renewal) {
+            verificationPolicy.validateRenewalWindow(
+                    latestVerification.orElse(null),
+                    type,
+                    occurredAt
+            );
+        }
 
         boolean activeExists = verificationRepository
                 .existsByPropertyIdAndVerificationTypeAndStatusInAndDeletedAtIsNull(
@@ -91,8 +109,6 @@ public class PropertyVerificationService {
         }
 
         validateEvidence(request.evidence(), actorContext);
-        Instant occurredAt = Instant.now();
-        String beforeSnapshotJson = objectMapper.writeValueAsString(property);
         VerificationStatus beforeStatus = property.getVerificationStatus();
 
         PropertyVerification verification = PropertyVerification.submit(
@@ -100,16 +116,30 @@ public class PropertyVerificationService {
                 propertyId,
                 type,
                 actorContext.memberId(),
-                nextVerificationVersion(propertyId, type),
+                nextVerificationVersion(latestVerification),
                 occurredAt,
                 actorContext
         );
         PropertyVerification savedVerification = verificationRepository.saveAndFlush(verification);
         saveEvidence(savedVerification.getPropertyVerificationId(), request.evidence(), actorContext);
 
-        property.changeVerificationStatus(VerificationStatus.IN_REVIEW, actorContext);
-        Property savedProperty = saveProperty(property);
-        recordStatusChange(savedProperty, beforeStatus, null, actorContext, occurredAt, beforeSnapshotJson);
+        Property savedProperty = property;
+        if (!renewal) {
+            String beforeSnapshotJson = objectMapper.writeValueAsString(property);
+            property.changeVerificationStatus(
+                    VerificationStatus.IN_REVIEW,
+                    actorContext
+            );
+            savedProperty = saveProperty(property);
+            recordStatusChange(
+                    savedProperty,
+                    beforeStatus,
+                    null,
+                    actorContext,
+                    occurredAt,
+                    beforeSnapshotJson
+            );
+        }
         recordEvents(savedProperty, savedVerification, PropertyEventType.PROPERTY_VERIFICATION_REQUESTED,
                 PropertyAuditActionCode.PROPERTY_VERIFICATION_REQUESTED, null, occurredAt, actorContext);
 
@@ -123,7 +153,7 @@ public class PropertyVerificationService {
             PropertyVerificationReviewRequest request,
             ActorContext actorContext
     ) {
-        Property property = findProperty(propertyId);
+        Property property = findPropertyForVerificationChange(propertyId);
         propertyVersionPolicy.validate(property.getVersion(), request.version());
         PropertyVerification verification = verificationRepository
                 .findByPropertyVerificationIdAndPropertyIdAndDeletedAtIsNull(verificationId, propertyId)
@@ -137,6 +167,7 @@ public class PropertyVerificationService {
         Instant occurredAt = Instant.now();
         String beforeSnapshotJson = objectMapper.writeValueAsString(property);
         VerificationStatus beforeStatus = property.getVerificationStatus();
+        boolean renewal = verificationPolicy.isVerified(beforeStatus);
         boolean approved = request.decision() == PropertyVerificationDecision.APPROVE;
 
         if (approved) {
@@ -151,15 +182,48 @@ public class PropertyVerificationService {
                 case TENANT -> VerificationStatus.TENANT_VERIFIED;
                 case AGENT_BROKERAGE -> VerificationStatus.AGENT_VERIFIED;
             };
-            property.changeVerificationStatus(approvedStatus, actorContext);
+            if (renewal) {
+                verificationRepository
+                        .findTopByPropertyIdAndVerificationTypeAndStatusAndPropertyVerificationIdNotAndDeletedAtIsNullOrderByVerificationVersionDesc(
+                                propertyId,
+                                verification.getVerificationType(),
+                                PropertyVerificationStatus.VERIFIED,
+                                verificationId
+                        )
+                        .filter(previous -> previous.supersedeByRenewal(
+                                occurredAt,
+                                actorContext
+                        ))
+                        .ifPresent(verificationRepository::saveAndFlush);
+            } else {
+                property.changeVerificationStatus(
+                        approvedStatus,
+                        actorContext
+                );
+            }
         } else {
             verification.reject(request.reason(), occurredAt, actorContext);
-            property.changeVerificationStatus(VerificationStatus.REJECTED, actorContext);
+            if (!renewal) {
+                property.changeVerificationStatus(
+                        VerificationStatus.REJECTED,
+                        actorContext
+                );
+            }
         }
 
         PropertyVerification savedVerification = verificationRepository.saveAndFlush(verification);
-        Property savedProperty = saveProperty(property);
-        recordStatusChange(savedProperty, beforeStatus, request.reason(), actorContext, occurredAt, beforeSnapshotJson);
+        Property savedProperty = property;
+        if (!renewal) {
+            savedProperty = saveProperty(property);
+            recordStatusChange(
+                    savedProperty,
+                    beforeStatus,
+                    request.reason(),
+                    actorContext,
+                    occurredAt,
+                    beforeSnapshotJson
+            );
+        }
 
         String eventType = approved
                 ? PropertyEventType.PROPERTY_VERIFICATION_APPROVED
@@ -173,11 +237,14 @@ public class PropertyVerificationService {
         return PropertyVerificationResponse.from(savedVerification, savedProperty);
     }
 
-    private Property findProperty(Long propertyId) {
+    private Property findPropertyForVerificationChange(Long propertyId) {
         if (propertyId == null || propertyId <= 0) {
-            throw new BusinessException(CustomResponseCode.PROPERTY_NOT_FOUND, "매물을 찾을 수 없습니다.");
+            throw new BusinessException(
+                    CustomResponseCode.PROPERTY_NOT_FOUND,
+                    "매물을 찾을 수 없습니다."
+            );
         }
-        return propertyRepository.findByPropertyIdAndDeletedAtIsNull(propertyId)
+        return propertyRepository.findForVerificationChange(propertyId)
                 .orElseThrow(() -> new BusinessException(
                         CustomResponseCode.PROPERTY_NOT_FOUND,
                         "매물을 찾을 수 없습니다. propertyId = " + propertyId
@@ -222,9 +289,10 @@ public class PropertyVerificationService {
         return new BusinessException(CustomResponseCode.PROPERTY_VERIFICATION_EVIDENCE_INVALID, message);
     }
 
-    private int nextVerificationVersion(Long propertyId, PropertyVerificationType type) {
-        return verificationRepository
-                .findTopByPropertyIdAndVerificationTypeOrderByVerificationVersionDesc(propertyId, type)
+    private int nextVerificationVersion(
+            Optional<PropertyVerification> latestVerification
+    ) {
+        return latestVerification
                 .map(item -> item.getVerificationVersion() + 1)
                 .orElse(1);
     }

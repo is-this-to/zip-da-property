@@ -15,6 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 @Getter
 @Entity
@@ -57,6 +58,12 @@ public class PropertyVerification extends BaseAuditEntity {
 
     @Column(name = "expires_at", columnDefinition = "DATETIME(6)")
     private Instant expiresAt;
+
+    @Column(
+            name = "renewal_notified_at",
+            columnDefinition = "DATETIME(6)"
+    )
+    private Instant renewalNotifiedAt;
 
     @Column(name = "result_code", length = 50)
     private String resultCode;
@@ -138,6 +145,40 @@ public class PropertyVerification extends BaseAuditEntity {
         this.status = PropertyVerificationStatus.EXPIRED;
         this.resultCode = "EXPIRED";
         this.resultReason = "인증 유효기간이 만료되었습니다.";
+        recordUpdate(actorContext);
+        return true;
+    }
+
+    public boolean markRenewalNotificationIfDue(
+            Instant currentTime,
+            ActorContext actorContext
+    ) {
+        if (status != PropertyVerificationStatus.VERIFIED
+                || expiresAt == null
+                || renewalNotifiedAt != null
+                || !expiresAt.isAfter(currentTime)
+                || expiresAt.minus(7, ChronoUnit.DAYS)
+                .isAfter(currentTime)) {
+            return false;
+        }
+
+        this.renewalNotifiedAt = currentTime;
+        recordUpdate(actorContext);
+        return true;
+    }
+
+    public boolean supersedeByRenewal(
+            Instant supersededAt,
+            ActorContext actorContext
+    ) {
+        if (status != PropertyVerificationStatus.VERIFIED) {
+            return false;
+        }
+
+        this.status = PropertyVerificationStatus.EXPIRED;
+        this.expiresAt = supersededAt;
+        this.resultCode = "SUPERSEDED_BY_RENEWAL";
+        this.resultReason = "재인증 승인으로 기존 인증이 대체되었습니다.";
         recordUpdate(actorContext);
         return true;
     }
