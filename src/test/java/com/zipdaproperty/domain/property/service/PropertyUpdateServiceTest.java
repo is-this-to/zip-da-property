@@ -4,6 +4,7 @@ import com.zipdaproperty.domain.image.service.PropertyImageSyncService;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyUpdateCommand;
+import com.zipdaproperty.domain.property.command.PropertyAddressCommand;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.constant.PublisherType;
@@ -15,9 +16,11 @@ import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
 import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
+import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.request.PropertyUpdateRequest;
+import com.zipdaproperty.domain.property.request.PropertyAddressRequest;
 import com.zipdaproperty.domain.property.response.PropertyUpdateResponse;
 import com.zipdaproperty.domain.region.entity.Region;
 import com.zipdaproperty.domain.region.repository.RegionRepository;
@@ -118,6 +121,12 @@ class PropertyUpdateServiceTest {
             propertyKafkaEventPublisher =
             mock(PropertyKafkaEventPublisher.class);
 
+    private final PropertyAddressService propertyAddressService =
+            mock(PropertyAddressService.class);
+
+    private final EntityManager entityManager =
+            mock(EntityManager.class);
+
     private final PropertyUpdateService propertyUpdateService =
             new PropertyUpdateService(
                     propertyRepository,
@@ -131,7 +140,9 @@ class PropertyUpdateServiceTest {
                     entityManager,
                     objectMapper,
                     propertyAuditEventRecorder,
-                    propertyKafkaEventPublisher
+                    propertyKafkaEventPublisher,
+                    propertyAddressService,
+                    entityManager
             );
 
     private final ActorContext ownerContext =
@@ -140,6 +151,101 @@ class PropertyUpdateServiceTest {
                     ActorRole.USER,
                     "property-update-test-owner"
             );
+
+    @Test
+    void update_addressOnlyForcesVersionIncrementAndChangesAddress() {
+        Property property = prepareExistingProperty(CURRENT_VERSION);
+        prepareCompletePropertyState(property);
+
+        when(property.getVersion())
+                .thenReturn(
+                        CURRENT_VERSION,
+                        NEXT_VERSION,
+                        NEXT_VERSION,
+                        NEXT_VERSION
+                );
+
+        PropertyAddressRequest addressRequest =
+                new PropertyAddressRequest(
+                        "대구 수성구 달구벌대로 2450",
+                        "대구광역시 수성구 범어동 123",
+                        "2726010100",
+                        new BigDecimal("128.625123"),
+                        new BigDecimal("35.859321")
+                );
+
+        PropertyUpdateRequest request =
+                new PropertyUpdateRequest(
+                        CURRENT_VERSION,
+                        Map.of(),
+                        addressRequest
+                );
+
+        PreparedPropertyAddress preparedAddress =
+                mock(PreparedPropertyAddress.class);
+
+        when(preparedAddress.regionId())
+                .thenReturn(REGION_ID);
+
+        when(
+                propertyAddressService.prepare(
+                        eq(PROPERTY_ID),
+                        any(PropertyAddressCommand.class)
+                )
+        ).thenReturn(preparedAddress);
+
+        PropertyUpdateCommand command =
+                createUpdateCommand(
+                        CURRENT_VERSION,
+                        BEFORE_TITLE
+                );
+
+        when(
+                propertyUpdateCommandFactory.create(
+                        property,
+                        request,
+                        REGION_ID
+                )
+        ).thenReturn(command);
+
+        when(
+                regionRepository
+                        .findByRegionIdAndIsActiveTrue(REGION_ID)
+        ).thenReturn(Optional.of(mock(Region.class)));
+
+        when(objectMapper.writeValueAsString(property))
+                .thenReturn("{}", "{}");
+
+        when(
+                objectMapper.writeValueAsString(
+                        List.of("address")
+                )
+        ).thenReturn("[\"address\"]");
+
+        PropertyUpdateResponse response =
+                propertyUpdateService.update(
+                        PROPERTY_ID,
+                        request,
+                        ownerContext
+                );
+
+        assertThat(response.version()).isEqualTo(NEXT_VERSION);
+
+        verify(entityManager).lock(
+                property,
+                LockModeType.PESSIMISTIC_FORCE_INCREMENT
+        );
+        verify(entityManager).flush();
+
+        verify(propertyRepository, never())
+                .saveAndFlush(any(Property.class));
+
+        verify(propertyAddressService).change(
+                property,
+                preparedAddress,
+                ownerContext
+        );
+    }
 
     @Test
     void update_ownerAndValidVersion_savesPropertyRevisionAuditAndPublishesKafkaEvent() {
@@ -175,7 +281,8 @@ class PropertyUpdateServiceTest {
         when(
                 propertyUpdateCommandFactory.create(
                         property,
-                        request
+                        request,
+                        null
                 )
         ).thenReturn(command);
 
@@ -600,7 +707,8 @@ class PropertyUpdateServiceTest {
                 never()
         ).create(
                 any(Property.class),
-                any(PropertyUpdateRequest.class)
+                any(PropertyUpdateRequest.class),
+                isNull()
         );
 
         verify(
@@ -663,7 +771,8 @@ class PropertyUpdateServiceTest {
                 never()
         ).create(
                 any(Property.class),
-                any(PropertyUpdateRequest.class)
+                any(PropertyUpdateRequest.class),
+                isNull()
         );
 
         verify(
@@ -705,7 +814,8 @@ class PropertyUpdateServiceTest {
         when(
                 propertyUpdateCommandFactory.create(
                         property,
-                        request
+                        request,
+                        null
                 )
         ).thenReturn(command);
 

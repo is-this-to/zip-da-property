@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Objects;
 
 @Component
 @RequiredArgsConstructor
@@ -54,20 +55,33 @@ public class PropertyUpdateCommandFactory {
             Property property,
             PropertyUpdateRequest request
     ) {
-        Map<String, JsonNode> changes = request.changes() == null
-                ? Map.of()
-                : request.changes();
+        return create(property, request, null);
+    }
 
-        validateChanges(changes);
+    public PropertyUpdateCommand create(
+            Property property,
+            PropertyUpdateRequest request,
+            Long verifiedRegionId
+    ) {
+        Map<String, JsonNode> changes = request.changes();
+
+        validateChanges(changes, request.address() != null);
+        validateRegionChange(
+                changes,
+                request.address() != null,
+                verifiedRegionId
+        );
 
         return new PropertyUpdateCommand(
                 request.version(),
-                valueOrCurrent(
-                        changes,
-                        "regionId",
-                        Long.class,
-                        property.getRegionId()
-                ),
+                verifiedRegionId != null
+                        ? verifiedRegionId
+                        : valueOrCurrent(
+                                changes,
+                                "regionId",
+                                Long.class,
+                                property.getRegionId()
+                        ),
                 valueOrCurrent(
                         changes,
                         "apartmentComplexId",
@@ -203,9 +217,18 @@ public class PropertyUpdateCommandFactory {
         );
     }
 
-    private void validateChanges(Map<String, JsonNode> changes) {
-        if (changes.isEmpty()) {
-            return;
+    private void validateChanges(
+            Map<String, JsonNode> changes,
+            boolean addressChangeRequested
+    ) {
+        if (
+                (changes == null || changes.isEmpty())
+                        && !addressChangeRequested
+        ) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_REQUEST,
+                    "changes 또는 address에는 최소 한 개 이상의 수정 내용이 필요합니다."
+            );
         }
 
         List<String> invalidFields = changes.keySet()
@@ -219,6 +242,37 @@ public class PropertyUpdateCommandFactory {
                     CustomResponseCode.INVALID_REQUEST,
                     "수정할 수 없는 필드가 포함되어 있습니다: "
                             + String.join(", ", invalidFields)
+            );
+        }
+    }
+
+    private void validateRegionChange(
+            Map<String, JsonNode> changes,
+            boolean addressChangeRequested,
+            Long verifiedRegionId
+    ) {
+        if (!changes.containsKey("regionId")) {
+            return;
+        }
+
+        if (!addressChangeRequested) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_REQUEST,
+                    "regionId는 정확주소와 함께 변경해야 합니다."
+            );
+        }
+
+        Long requestedRegionId = valueOrCurrent(
+                changes,
+                "regionId",
+                Long.class,
+                null
+        );
+
+        if (!Objects.equals(requestedRegionId, verifiedRegionId)) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_REQUEST,
+                    "요청 regionId와 주소·좌표로 검증된 Region이 일치하지 않습니다."
             );
         }
     }

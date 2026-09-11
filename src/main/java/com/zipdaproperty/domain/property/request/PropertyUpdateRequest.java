@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.zipdaproperty.global.id.TsidLongDeserializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -30,22 +31,52 @@ public record PropertyUpdateRequest(
         )
         @JsonDeserialize(contentUsing = TsidLongDeserializer.class)
         @JsonSerialize(contentUsing = ToStringSerializer.class)
-        List<@NotNull Long> fileIds
+        List<@NotNull Long> fileIds,
+
+        @Valid
+        PropertyAddressRequest address
 
 ) {
+
+    public PropertyUpdateRequest {
+        changes = changes == null ? Map.of() : Map.copyOf(changes);
+    }
 
     public PropertyUpdateRequest(
             Long version,
             Map<String, JsonNode> changes
     ) {
-        this(version, changes, null);
+        this(version, changes, null, null);
     }
 
-    @AssertTrue(message = "수정할 필드 또는 파일 ID 목록이 필요합니다.")
+    public PropertyUpdateRequest(
+            Long version,
+            Map<String, JsonNode> changes,
+            Object updateTarget
+    ) {
+        this(
+                version,
+                changes,
+                updateTarget instanceof List<?>
+                        ? castFileIds(updateTarget)
+                        : null,
+                updateTarget instanceof PropertyAddressRequest
+                        ? (PropertyAddressRequest) updateTarget
+                        : null
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Long> castFileIds(Object updateTarget) {
+        return (List<Long>) updateTarget;
+    }
+
+    @AssertTrue(message = "수정할 필드, 파일 ID 목록 또는 주소가 필요합니다.")
     @JsonIgnore
     @Schema(hidden = true)
     public boolean isUpdateTargetProvided() {
         return (changes != null && !changes.isEmpty())
-                || fileIds != null;
+                || fileIds != null
+                || address != null;
     }
 }

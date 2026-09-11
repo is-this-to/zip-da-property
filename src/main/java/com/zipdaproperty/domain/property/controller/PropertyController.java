@@ -3,14 +3,17 @@ package com.zipdaproperty.domain.property.controller;
 import com.zipdaproperty.domain.property.idempotency.service.PropertyIdempotencyService;
 import com.zipdaproperty.domain.property.request.PropertyCreateRequest;
 import com.zipdaproperty.domain.property.request.PropertyDeleteRequest;
+import com.zipdaproperty.domain.property.request.PropertyPublicationStatusChangeRequest;
 import com.zipdaproperty.domain.property.request.PropertyRestoreRequest;
 import com.zipdaproperty.domain.property.request.PropertyTransactionStatusChangeRequest;
 import com.zipdaproperty.domain.property.request.PropertyUpdateRequest;
 import com.zipdaproperty.domain.property.response.PropertyCreateResponse;
+import com.zipdaproperty.domain.property.response.PropertyPublicationStatusChangeResponse;
 import com.zipdaproperty.domain.property.response.PropertyRestoreResponse;
 import com.zipdaproperty.domain.property.response.PropertyTransactionStatusChangeResponse;
 import com.zipdaproperty.domain.property.response.PropertyUpdateResponse;
 import com.zipdaproperty.domain.property.service.PropertyDeleteService;
+import com.zipdaproperty.domain.property.service.PropertyPublicationStatusChangeService;
 import com.zipdaproperty.domain.property.service.PropertyRestoreService;
 import com.zipdaproperty.domain.property.service.PropertyTransactionStatusChangeService;
 import com.zipdaproperty.domain.property.service.PropertyUpdateService;
@@ -55,6 +58,9 @@ public class PropertyController {
     private final PropertyTransactionStatusChangeService
             propertyTransactionStatusChangeService;
 
+    private final PropertyPublicationStatusChangeService
+            propertyPublicationStatusChangeService;
+
     private final PropertyDeleteService propertyDeleteService;
 
     private final PropertyRestoreService propertyRestoreService;
@@ -66,6 +72,8 @@ public class PropertyController {
                     일반 회원은 집주인 직접 등록만 가능하고,
                     중개사는 중개사 매물 등록만 가능합니다.
                     등록된 매물은 공개 검수 대기 상태로 생성됩니다.
+                    카카오 주소 결과의 법정동 코드와 좌표를 검증하고,
+                    정확 위치와 지도 공개용 비식별 위치를 함께 저장합니다.
                     동일한 Idempotency-Key로 동일 요청을 반복하면
                     최초 요청의 응답을 재사용합니다.
                     """
@@ -76,6 +84,10 @@ public class PropertyController {
             CustomResponseCode.INVALID_REQUEST,
             CustomResponseCode.INVALID_PRICE_COMBINATION,
             CustomResponseCode.PROPERTY_CREATE_NOT_ALLOWED,
+            CustomResponseCode.PROPERTY_REGION_NOT_FOUND,
+            CustomResponseCode.PROPERTY_REGION_BOUNDARY_NOT_FOUND,
+            CustomResponseCode.PROPERTY_LOCATION_REGION_MISMATCH,
+            CustomResponseCode.PROPERTY_PUBLIC_LOCATION_GENERATION_FAILED,
             CustomResponseCode.IDEMPOTENCY_KEY_REQUIRED,
             CustomResponseCode.IDEMPOTENCY_CONFLICT,
             CustomResponseCode.IDEMPOTENCY_REQUEST_IN_PROGRESS,
@@ -126,6 +138,8 @@ public class PropertyController {
                     반드시 동일해야 합니다.
                     DB의 현재 version이 요청 version과 다르면
                     수정하지 않고 VERSION_CONFLICT를 반환합니다.
+                    address를 전달한 경우에만 정확 주소와 공개 위치를
+                    다시 검증하고 변경합니다.
                     """
     )
     @CustomApiResponse({
@@ -137,6 +151,10 @@ public class PropertyController {
             CustomResponseCode.VERSION_CONFLICT,
             CustomResponseCode.PROPERTY_NOT_FOUND,
             CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+            CustomResponseCode.PROPERTY_REGION_NOT_FOUND,
+            CustomResponseCode.PROPERTY_REGION_BOUNDARY_NOT_FOUND,
+            CustomResponseCode.PROPERTY_LOCATION_REGION_MISMATCH,
+            CustomResponseCode.PROPERTY_PUBLIC_LOCATION_GENERATION_FAILED,
             CustomResponseCode.DB_ERROR,
             CustomResponseCode.SYSTEM_ERROR
     })
@@ -270,6 +288,89 @@ public class PropertyController {
 
         PropertyTransactionStatusChangeResponse response =
                 propertyTransactionStatusChangeService.change(
+                        propertyId,
+                        request,
+                        actorContext
+                );
+
+        return ResponseEntity.ok(
+                GlobalResponseDTO.success(response)
+        );
+    }
+
+    @Operation(
+            summary = "매물 공개 상태 변경",
+            description = """
+                    매물의 검수 승인·거절·재신청·숨김·재공개를 처리합니다.
+                    검수 승인과 거절은 관리자만 수행할 수 있고,
+                    거절된 매물의 재신청은 작성자만 수행할 수 있습니다.
+                    숨김과 재공개는 작성자 또는 허용된 관리자가 수행합니다.
+                    재공개는 거래 상태가 AVAILABLE인 경우에만 허용됩니다.
+                    If-Match 헤더와 요청 본문의 version은
+                    반드시 동일해야 합니다.
+                    """
+    )
+    @CustomApiResponse({
+            CustomResponseCode.UNAUTHENTICATED,
+            CustomResponseCode.FORBIDDEN,
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.INVALID_STATUS_TRANSITION,
+            CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.PROPERTY_NOT_FOUND,
+            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+            CustomResponseCode.DB_ERROR,
+            CustomResponseCode.SYSTEM_ERROR
+    })
+    @PreAuthorize(
+            "hasAnyRole("
+                    + "'USER', "
+                    + "'AGENT', "
+                    + "'CS_ADMIN', "
+                    + "'SUPER_ADMIN'"
+                    + ")"
+    )
+    @PatchMapping("/{propertyId}/publication-status")
+    public ResponseEntity<
+            GlobalResponseDTO<
+                    PropertyPublicationStatusChangeResponse
+                    >
+            >
+    changePublicationStatus(
+            @Parameter(
+                    description = "공개 상태를 변경할 매물 ID",
+                    required = true,
+                    example = "884685586571263701"
+            )
+            @PathVariable
+            Long propertyId,
+
+            @Parameter(
+                    description = "마지막으로 조회한 매물 version",
+                    required = true,
+                    example = "\"1\""
+            )
+            @RequestHeader(
+                    name = "If-Match",
+                    required = false
+            )
+            String ifMatch,
+
+            @Valid
+            @RequestBody
+            PropertyPublicationStatusChangeRequest request,
+
+            @Parameter(hidden = true)
+            ActorContext actorContext
+    ) {
+        Long ifMatchVersion = parseIfMatch(ifMatch);
+
+        validateVersionAgreement(
+                ifMatchVersion,
+                request.version()
+        );
+
+        PropertyPublicationStatusChangeResponse response =
+                propertyPublicationStatusChangeService.change(
                         propertyId,
                         request,
                         actorContext

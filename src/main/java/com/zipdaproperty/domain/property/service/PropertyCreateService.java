@@ -12,6 +12,7 @@ import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.entity.PropertyStatusHistory;
 import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
 import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
+import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
 import com.zipdaproperty.domain.property.repository.PropertyPublisherSnapshotRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
@@ -101,6 +102,8 @@ public class PropertyCreateService {
     private final PropertyKafkaEventPublisher
             propertyKafkaEventPublisher;
 
+    private final PropertyAddressService propertyAddressService;
+
     @Transactional
     public PropertyCreateResponse create(
             PropertyCreateCommand command,
@@ -122,6 +125,17 @@ public class PropertyCreateService {
 
         Long propertyId = tsidGenerator.generate();
 
+        PreparedPropertyAddress preparedAddress =
+                propertyAddressService.prepare(
+                        propertyId,
+                        command.address()
+                );
+
+        validateRegionMatch(
+                command.regionId(),
+                preparedAddress.regionId()
+        );
+
         Property property = Property.create(
                 propertyId,
                 command,
@@ -134,6 +148,12 @@ public class PropertyCreateService {
         propertyImageLinkService.linkImages(
                 savedProperty.getPropertyId(),
                 command.fileIds(),
+                actorContext
+        );
+
+        propertyAddressService.create(
+                savedProperty,
+                preparedAddress,
                 actorContext
         );
 
@@ -240,6 +260,21 @@ public class PropertyCreateService {
                                         + regionId
                         )
                 );
+    }
+
+    private void validateRegionMatch(
+            Long requestedRegionId,
+            Long verifiedRegionId
+    ) {
+        if (!java.util.Objects.equals(
+                requestedRegionId,
+                verifiedRegionId
+        )) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_REQUEST,
+                    "요청 지역과 주소·좌표로 검증된 지역이 일치하지 않습니다."
+            );
+        }
     }
 
     private void saveInitialStatusHistories(

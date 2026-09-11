@@ -6,6 +6,7 @@ import com.zipdaproperty.domain.property.constant.PublisherType;
 import com.zipdaproperty.domain.property.constant.TransactionType;
 import com.zipdaproperty.global.id.TsidString;
 import com.zipdaproperty.global.id.TsidLongDeserializer;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
@@ -127,7 +128,11 @@ public record PropertyCreateRequest(
         @Size(min = 1, max = 30, message = "매물 이미지는 1개 이상 30개 이하로 등록해야 합니다.")
         @JsonDeserialize(contentUsing = TsidLongDeserializer.class)
         @JsonSerialize(contentUsing = ToStringSerializer.class)
-        List<@NotNull Long> fileIds
+        List<@NotNull Long> fileIds,
+
+        @Valid
+        @NotNull(message = "매물 주소는 필수입니다.")
+        PropertyAddressRequest address
 
 ) {
 
@@ -157,7 +162,8 @@ public record PropertyCreateRequest(
                 isPetAllowed,
                 title,
                 description,
-                fileIds
+                fileIds,
+                address.toCommand()
         );
     }
 }

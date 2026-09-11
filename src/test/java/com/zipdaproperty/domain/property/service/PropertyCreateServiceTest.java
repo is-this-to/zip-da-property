@@ -4,6 +4,7 @@ import com.zipdaproperty.domain.image.service.PropertyImageLinkService;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyCreateCommand;
+import com.zipdaproperty.domain.property.command.PropertyAddressCommand;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublisherType;
 import com.zipdaproperty.domain.property.constant.TransactionType;
@@ -12,6 +13,7 @@ import com.zipdaproperty.domain.property.entity.PropertyPublisherSnapshot;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
 import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
+import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
 import com.zipdaproperty.domain.property.repository.PropertyPublisherSnapshotRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
@@ -130,6 +132,9 @@ class PropertyCreateServiceTest {
 
     private PropertyCreateService propertyCreateService;
 
+    private final PropertyAddressService propertyAddressService =
+            mock(PropertyAddressService.class);
+
     private final ActorContext ownerContext =
             ActorContext.member(
                     AUTHOR_MEMBER_ID,
@@ -151,7 +156,8 @@ class PropertyCreateServiceTest {
                         objectMapper,
                         propertyImageLinkService,
                         propertyAuditEventRecorder,
-                        propertyKafkaEventPublisher
+                        propertyKafkaEventPublisher,
+                        propertyAddressService
                 );
 
         TransactionInterceptor interceptor =
@@ -182,7 +188,8 @@ class PropertyCreateServiceTest {
         PropertyCreateCommand command =
                 createValidCommand();
 
-        stubValidCreatePersistence();
+        PreparedPropertyAddress preparedAddress =
+                stubValidCreatePersistence();
 
         PropertyCreateResponse response =
                 propertyCreateService.create(
@@ -208,6 +215,7 @@ class PropertyCreateServiceTest {
                 inOrder(
                         propertyRepository,
                         propertyImageLinkService,
+                        propertyAddressService,
                         propertyRevisionRepository,
                         propertyStatusHistoryRepository,
                         propertyPublisherSnapshotRepository,
@@ -221,6 +229,13 @@ class PropertyCreateServiceTest {
                 .linkImages(
                         eq(PROPERTY_ID),
                         same(FILE_IDS),
+                        same(ownerContext)
+                );
+
+        order.verify(propertyAddressService)
+                .create(
+                        any(Property.class),
+                        same(preparedAddress),
                         same(ownerContext)
                 );
 
@@ -521,7 +536,7 @@ class PropertyCreateServiceTest {
                 .commit(any());
     }
 
-    private void stubValidCreatePersistence() {
+    private PreparedPropertyAddress stubValidCreatePersistence() {
         when(
                 regionRepository
                         .findByRegionIdAndIsActiveTrue(REGION_ID)
@@ -531,6 +546,19 @@ class PropertyCreateServiceTest {
 
         when(tsidGenerator.generate())
                 .thenReturn(PROPERTY_ID);
+
+        PreparedPropertyAddress preparedAddress =
+                mock(PreparedPropertyAddress.class);
+
+        when(preparedAddress.regionId())
+                .thenReturn(REGION_ID);
+
+        when(
+                propertyAddressService.prepare(
+                        eq(PROPERTY_ID),
+                        any(PropertyAddressCommand.class)
+                )
+        ).thenReturn(preparedAddress);
 
         when(
                 propertyRepository.saveAndFlush(
@@ -568,6 +596,8 @@ class PropertyCreateServiceTest {
 
         when(objectMapper.writeValueAsString(any()))
                 .thenReturn("{}");
+
+        return preparedAddress;
     }
 
     private PropertyCreateCommand createValidCommand() {
@@ -600,7 +630,14 @@ class PropertyCreateServiceTest {
                 false,
                 "Kafka 등록 테스트 매물",
                 "매물 등록과 감사 및 Kafka 발행을 검증합니다.",
-                FILE_IDS
+                FILE_IDS,
+                new PropertyAddressCommand(
+                        "대구 수성구 달구벌대로 2450",
+                        "대구광역시 수성구 범어동 123",
+                        "2726010100",
+                        new BigDecimal("128.625123"),
+                        new BigDecimal("35.859321")
+                )
         );
     }
 }

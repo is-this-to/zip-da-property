@@ -11,6 +11,11 @@
 2. `002_create_property_favorite_table.sql`
 3. `003_create_property_option_tables.sql`
 4. `004_create_property_idempotency_table.sql`
+5. `005_create_property_file_table.sql`
+6. `006_create_property_audit_event_table.sql`
+7. `007_create_property_verification_tables.sql`
+8. `008_create_property_address_table.sql`
+9. `009_create_property_member_integration_tables.sql`
 
 ## 실행 전 확인
 
@@ -25,6 +30,20 @@
 - 임차인 인증(`TENANT_VERIFIED`)은 지원하지 않습니다.
 - 입주 가능 상태 및 입주일은 관리하지 않습니다.
 - 전세대출 가능 여부는 관리하지 않습니다.
+
+## Member 이벤트 연동
+
+- `009_create_property_member_integration_tables.sql`을 적용한 뒤에만
+  `MEMBER_KAFKA_ENABLED=true`로 Member Kafka 소비자를 활성화합니다.
+- 기본 토픽은 `zipda.member.events.v1`, 기본 소비자 그룹은
+  `zip-da-property-member-events`입니다.
+- `property_member_event_consumption.event_id` 기본 키로 중복 이벤트를
+  멱등 처리합니다.
+- `MemberWithdrawn` 이벤트는 해당 회원이 작성한 공개 상태(`PUBLISHED`)
+  매물을 `HIDDEN`으로 변경하고 revision·상태 이력·감사·Kafka 이벤트를
+  함께 기록합니다.
+- Member 이벤트에는 이메일·전화번호·서류 원문 등 개인정보를 포함하거나
+  Property DB에 복제하지 않습니다.
 
 ## 외래키 정책
 

@@ -33,6 +33,7 @@ public record PropertyCreateCommand(
         Boolean isPetAllowed,
         String title,
         String description,
-        List<Long> fileIds
+        List<Long> fileIds,
+        PropertyAddressCommand address
 ) {
 }
