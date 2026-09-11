@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -266,6 +267,10 @@ class PropertyVerificationServiceTest {
 
         assertThat(verification.getStatus()).isEqualTo(PropertyVerificationStatus.VERIFIED);
         assertThat(verification.getReviewerMemberId()).isEqualTo(ADMIN_ID);
+        assertThat(Duration.between(
+                verification.getVerifiedAt(),
+                verification.getExpiresAt()
+        )).isEqualTo(Duration.ofDays(30));
         assertThat(response.verificationRequestStatus()).isEqualTo(PropertyVerificationStatus.VERIFIED);
         verify(property).changeVerificationStatus(VerificationStatus.OWNER_VERIFIED, admin);
         verify(auditEventRecorder).recordPropertyAction(

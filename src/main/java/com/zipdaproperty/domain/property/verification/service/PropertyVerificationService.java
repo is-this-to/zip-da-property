@@ -51,7 +51,7 @@ import java.util.Set;
 public class PropertyVerificationService {
 
     private static final String VERIFICATION_STATUS_FIELD = "verificationStatus";
-    private static final long VERIFICATION_VALID_DAYS = 365L;
+    private static final long VERIFICATION_VALID_DAYS = 30L;
 
     private final PropertyRepository propertyRepository;
     private final PropertyVerificationRepository verificationRepository;
