@@ -18,6 +18,7 @@
 9. `009_create_property_member_integration_tables.sql`
 10. `010_add_property_tenant_verification.sql`
 11. `011_add_property_verification_expiration_index.sql`
+12. `012_add_property_verification_evidence_cleanup_indexes.sql`
 
 ## 실행 전 확인
 
@@ -74,6 +75,22 @@
   함께 기록합니다.
 - Member 이벤트에는 이메일·전화번호·서류 원문 등 개인정보를 포함하거나
   Property DB에 복제하지 않습니다.
+
+## 검증 증빙 30일 보관 및 정리
+
+- 애플리케이션 배포 전에
+  `012_add_property_verification_evidence_cleanup_indexes.sql`을 한 번 실행합니다.
+- 승인·반려·만료로 검증이 종료된 시점(`reviewed_at`)부터 30일이 지난
+  활성 증빙 연결을 최대 100건씩 soft delete 합니다.
+- 같은 파일을 다른 활성 증빙이 참조하지 않을 때만 `property_file`을 soft delete 하고,
+  트랜잭션 커밋 후 MinIO 객체 삭제를 요청합니다.
+- 스토리지 삭제 실패 건은 기존 파일 유지보수 배치가 재시도합니다.
+- 검증 신청·심사 결과와 상태 이력은 삭제하지 않습니다.
+- 배치는 기본 15분 간격이며
+  `PROPERTY_VERIFICATION_EVIDENCE_CLEANUP_FIXED_DELAY_MS`로 변경할 수 있습니다.
+- 인덱스 생성 전 백업하고, 대상 테이블 크기에 따른 실행 시간과 잠금 영향을
+  스테이징에서 먼저 확인합니다. 문제 발생 시 애플리케이션 배치를 중지한 뒤
+  해당 인덱스를 제거하는 forward fix를 적용합니다.
 
 ## 외래키 정책
 

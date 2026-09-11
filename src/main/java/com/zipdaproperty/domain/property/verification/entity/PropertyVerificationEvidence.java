@@ -13,6 +13,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
+
 @Getter
 @Entity
 @Table(name = "property_verification_evidence")
@@ -50,5 +52,16 @@ public class PropertyVerificationEvidence extends BaseAuditEntity {
         this.propertyFileId = propertyFileId;
         this.evidenceType = evidenceType;
         this.sortOrder = sortOrder;
+    }
+
+    public void softDelete(
+            ActorContext actorContext,
+            Instant deletedAt,
+            String deleteReason
+    ) {
+        if (isDeleted()) {
+            return;
+        }
+        recordDeletion(actorContext, deletedAt, deleteReason);
     }
 }
