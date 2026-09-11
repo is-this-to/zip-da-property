@@ -30,18 +30,26 @@ public class PropertyMapController {
             propertyMapBoundsService;
 
     @Operation(
-            summary = "지도 bounds 기반 공개 매물 조회",
+            summary = "지도 확대 단계별 공개 매물 조회",
             description = """
-                    현재 지도 영역 안에서 공개 가능한 매물을 조회합니다.
+                    현재 지도 bounds와 Kakao ROADMAP zoomLevel을 기준으로
+                    공개 가능한 매물의 지도 표시 데이터를 조회합니다.
 
-                    정확 좌표가 아닌 비식별 공개 좌표인
-                    publicLocation만 지도 검색과 응답에 사용합니다.
+                    zoomLevel 13~14는 시·도 집계,
+                    zoomLevel 11~12는 시·군·구 집계,
+                    zoomLevel 8~10은 읍·면·동 집계를 반환합니다.
 
-                    공개 상태가 PUBLISHED이고 거래 상태가
-                    AVAILABLE 또는 RESERVED인 매물만 반환합니다.
+                    zoomLevel 5~7은 프런트 Kakao MarkerClusterer에 전달할
+                    PROPERTY_POINTS를 반환합니다.
 
-                    최대 500개까지 반환하고 전체 결과가
-                    500개를 초과하면 truncated가 true입니다.
+                    zoomLevel 1~4는 개별 가격 마커에 사용할
+                    PROPERTY_MARKER를 반환합니다.
+
+                    지도 검색과 응답에는 정확 좌표가 아닌
+                    비식별 공개 좌표 publicLocation만 사용합니다.
+
+                    개별 좌표는 최대 500개까지 반환하며,
+                    전체 결과가 500개를 초과하면 truncated가 true입니다.
 
                     조회 결과가 없으면 오류가 아닌 빈 items를 반환합니다.
                     """

@@ -77,5 +77,5 @@ public record PropertyMapBoundsItemResponse(
         )
         double longitude
 
-) {
+) implements PropertyMapItemResponse {
 }
