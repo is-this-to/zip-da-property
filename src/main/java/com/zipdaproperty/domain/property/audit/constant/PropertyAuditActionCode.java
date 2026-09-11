@@ -11,6 +11,9 @@ public final class PropertyAuditActionCode {
     public static final String PROPERTY_TRANSACTION_STATUS_CHANGED =
             "PROPERTY_TRANSACTION_STATUS_CHANGED";
 
+    public static final String PROPERTY_PUBLICATION_STATUS_CHANGED =
+            "PROPERTY_PUBLICATION_STATUS_CHANGED";
+
     public static final String PROPERTY_SOFT_DELETED =
             "PROPERTY_SOFT_DELETED";
 
