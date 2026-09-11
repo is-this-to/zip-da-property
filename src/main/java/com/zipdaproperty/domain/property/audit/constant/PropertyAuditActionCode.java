@@ -32,6 +32,9 @@ public final class PropertyAuditActionCode {
     public static final String PROPERTY_VERIFICATION_REJECTED =
             "PROPERTY_VERIFICATION_REJECTED";
 
+    public static final String PROPERTY_VERIFICATION_EXPIRED =
+            "PROPERTY_VERIFICATION_EXPIRED";
+
     private PropertyAuditActionCode() {
     }
 }

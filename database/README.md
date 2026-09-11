@@ -17,6 +17,7 @@
 8. `008_create_property_address_table.sql`
 9. `009_create_property_member_integration_tables.sql`
 10. `010_add_property_tenant_verification.sql`
+11. `011_add_property_verification_expiration_index.sql`
 
 ## 실행 전 확인
 
@@ -44,6 +45,21 @@
 - 스크립트 적용 전에는 기존 애플리케이션 동작과 데이터가 유지됩니다.
 - 확장 후 새 Enum 값이 저장되면 이전 애플리케이션 버전에서는 이를 읽지 못할 수 있으므로
   DB 확장 후 새 애플리케이션을 배포하고 이전 버전으로 임의 롤백하지 않습니다.
+
+## 인증 만료 배치 인덱스
+
+- 인증 만료 배치를 배포하기 전에
+  `011_add_property_verification_expiration_index.sql`을 한 번 실행합니다.
+- `status`, `deleted_at`, `expires_at`, `property_verification_id` 순서로
+  만료 대상 조회 인덱스를 추가합니다.
+- 인덱스 생성은 대상 테이블 크기에 따라 시간이 걸릴 수 있으므로 운영 반영 전
+  스테이징에서 실행 시간과 잠금 영향을 확인합니다.
+- 배치는 기본 60초 간격으로 최대 100건을 처리하며
+  `PROPERTY_VERIFICATION_EXPIRATION_FIXED_DELAY_MS`로 실행 간격을 변경할 수 있습니다.
+- 만료 시 `property_verification.status`와 `property.verification_status`를
+  `EXPIRED`로 변경하고 revision·상태 이력·감사·Kafka 이벤트를 함께 기록합니다.
+- 지도 및 찜 공개 조회는 `OWNER_VERIFIED`, `TENANT_VERIFIED`,
+  `AGENT_VERIFIED` 상태만 노출합니다.
 
 ## Member 이벤트 연동
 
