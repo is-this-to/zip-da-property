@@ -124,9 +124,6 @@ class PropertyUpdateServiceTest {
     private final PropertyAddressService propertyAddressService =
             mock(PropertyAddressService.class);
 
-    private final EntityManager entityManager =
-            mock(EntityManager.class);
-
     private final PropertyUpdateService propertyUpdateService =
             new PropertyUpdateService(
                     propertyRepository,
@@ -141,8 +138,7 @@ class PropertyUpdateServiceTest {
                     objectMapper,
                     propertyAuditEventRecorder,
                     propertyKafkaEventPublisher,
-                    propertyAddressService,
-                    entityManager
+                    propertyAddressService
             );
 
     private final ActorContext ownerContext =
@@ -494,8 +490,13 @@ class PropertyUpdateServiceTest {
                 CURRENT_VERSION,
                 BEFORE_TITLE
         );
-        when(propertyUpdateCommandFactory.create(property, request))
-                .thenReturn(command);
+        when(
+                propertyUpdateCommandFactory.create(
+                        property,
+                        request,
+                        null
+                )
+        ).thenReturn(command);
         when(regionRepository.findByRegionIdAndIsActiveTrue(REGION_ID))
                 .thenReturn(Optional.of(mock(Region.class)));
         when(propertyImageSyncService.prepareSync(PROPERTY_ID, fileIds))
@@ -567,8 +568,13 @@ class PropertyUpdateServiceTest {
                 CURRENT_VERSION,
                 AFTER_TITLE
         );
-        when(propertyUpdateCommandFactory.create(property, request))
-                .thenReturn(command);
+        when(
+                propertyUpdateCommandFactory.create(
+                        property,
+                        request,
+                        null
+                )
+        ).thenReturn(command);
         when(regionRepository.findByRegionIdAndIsActiveTrue(REGION_ID))
                 .thenReturn(Optional.of(mock(Region.class)));
         when(propertyImageSyncService.prepareSync(PROPERTY_ID, fileIds))
@@ -612,19 +618,29 @@ class PropertyUpdateServiceTest {
         when(property.getTitle()).thenReturn(BEFORE_TITLE);
 
         List<Long> fileIds = List.of(1L, 2L);
+
         PropertyUpdateRequest request = new PropertyUpdateRequest(
                 CURRENT_VERSION,
                 Map.of(),
                 fileIds
         );
+
         PropertyUpdateCommand command = createUpdateCommand(
                 CURRENT_VERSION,
                 BEFORE_TITLE
         );
-        when(propertyUpdateCommandFactory.create(property, request))
-                .thenReturn(command);
+
+        when(
+                propertyUpdateCommandFactory.create(
+                        property,
+                        request,
+                        null
+                )
+        ).thenReturn(command);
+
         when(regionRepository.findByRegionIdAndIsActiveTrue(REGION_ID))
                 .thenReturn(Optional.of(mock(Region.class)));
+
         when(propertyImageSyncService.prepareSync(PROPERTY_ID, fileIds))
                 .thenReturn(new PropertyImageSyncService.SyncPlan(
                         fileIds,
@@ -635,9 +651,11 @@ class PropertyUpdateServiceTest {
                 PROPERTY_ID,
                 request,
                 ownerContext
-        )).isInstanceOfSatisfying(BusinessException.class, exception ->
-                assertThat(exception.getCustomResponseCode())
-                        .isEqualTo(CustomResponseCode.INVALID_REQUEST)
+        )).isInstanceOfSatisfying(
+                BusinessException.class,
+                exception ->
+                        assertThat(exception.getCustomResponseCode())
+                                .isEqualTo(CustomResponseCode.INVALID_REQUEST)
         );
 
         verify(propertyImageSyncService, never()).syncImages(
@@ -645,6 +663,7 @@ class PropertyUpdateServiceTest {
                 any(),
                 any()
         );
+
         verifyNoInteractions(entityManager);
         verify(propertyRepository, never()).saveAndFlush(any());
         verify(propertyRevisionRepository, never()).save(any());
@@ -669,7 +688,11 @@ class PropertyUpdateServiceTest {
                         .isEqualTo(CustomResponseCode.VERSION_CONFLICT)
         );
 
-        verify(propertyUpdateCommandFactory, never()).create(any(), any());
+        verify(propertyUpdateCommandFactory, never()).create(
+                any(Property.class),
+                any(PropertyUpdateRequest.class),
+                isNull()
+        );
         verifyNoInteractions(propertyImageSyncService, entityManager);
         verify(propertyRepository, never()).saveAndFlush(any());
         verify(propertyRevisionRepository, never()).save(any());
