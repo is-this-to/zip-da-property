@@ -177,4 +177,46 @@ public class PropertyFile extends BaseAuditEntity {
         return uploadStatus == UploadStatus.VERIFIED
                 || uploadStatus == UploadStatus.LINKED;
     }
+
+    public boolean isReadyToLink() {
+        return uploadStatus == UploadStatus.VERIFIED;
+    }
+
+    public void markLinked(
+            ActorContext actorContext
+    ) {
+        if (!isReadyToLink()) {
+            throw new IllegalStateException(
+                    "VERIFIED 상태의 파일만 LINKED 상태로 변경할 수 있습니다."
+            );
+        }
+
+        this.uploadStatus = UploadStatus.LINKED;
+        this.linkedAt = Instant.now();
+        recordUpdate(actorContext);
+    }
+
+    public void softDelete(
+            ActorContext actorContext,
+            Instant deletedAt,
+            String deleteReason
+    ) {
+        recordDeletion(
+                actorContext,
+                deletedAt,
+                deleteReason
+        );
+    }
+
+    public void markObjectDeleted(
+            Instant objectDeletedAt,
+            ActorContext actorContext
+    ) {
+        if (this.objectDeletedAt != null) {
+            return;
+        }
+
+        this.objectDeletedAt = objectDeletedAt;
+        recordUpdate(actorContext);
+    }
 }

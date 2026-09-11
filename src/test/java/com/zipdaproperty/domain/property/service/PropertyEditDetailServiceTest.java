@@ -1,5 +1,12 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.file.entity.PropertyFile;
+import com.zipdaproperty.domain.file.constant.FilePurpose;
+import com.zipdaproperty.domain.file.constant.UploadStatus;
+import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
+import com.zipdaproperty.domain.file.storage.MinioPresignedGetUrlGenerator;
+import com.zipdaproperty.domain.image.entity.PropertyImage;
+import com.zipdaproperty.domain.image.repository.PropertyImageRepository;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.constant.PublisherType;
@@ -9,6 +16,7 @@ import com.zipdaproperty.domain.property.constant.VerificationStatus;
 import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.response.PropertyEditDetailResponse;
+import com.zipdaproperty.domain.property.response.PropertyEditImageResponse;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
@@ -16,7 +24,9 @@ import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -43,10 +53,22 @@ class PropertyEditDetailServiceTest {
     private final PropertyRepository propertyRepository =
             mock(PropertyRepository.class);
 
+    private final PropertyImageRepository propertyImageRepository =
+            mock(PropertyImageRepository.class);
+
+    private final PropertyFileRepository propertyFileRepository =
+            mock(PropertyFileRepository.class);
+
+    private final MinioPresignedGetUrlGenerator getUrlGenerator =
+            mock(MinioPresignedGetUrlGenerator.class);
+
     private final PropertyEditDetailService
             propertyEditDetailService =
             new PropertyEditDetailService(
-                    propertyRepository
+                    propertyRepository,
+                    propertyImageRepository,
+                    propertyFileRepository,
+                    getUrlGenerator
             );
 
     private final ActorContext authorContext =
@@ -109,10 +131,137 @@ class PropertyEditDetailServiceTest {
         assertThat(response.verificationStatus())
                 .isEqualTo(VerificationStatus.UNVERIFIED);
 
+        assertThat(response.images()).isEmpty();
+        verifyNoInteractions(
+                propertyFileRepository,
+                getUrlGenerator
+        );
+
         verify(propertyRepository)
                 .findByPropertyIdAndDeletedAtIsNull(
                         PROPERTY_ID
                 );
+    }
+
+    @Test
+    void getEditDetail_activeImagesAndFiles_returnsOrderedImageUrls() {
+        Property property = prepareProperty();
+        PropertyImage representative = PropertyImage.create(
+                PROPERTY_ID,
+                101L,
+                0,
+                true,
+                null,
+                authorContext
+        );
+        PropertyImage second = PropertyImage.create(
+                PROPERTY_ID,
+                102L,
+                1,
+                false,
+                null,
+                authorContext
+        );
+        PropertyFile representativeFile = propertyFile(
+                101L,
+                "opaque-image-reference-101"
+        );
+        PropertyFile secondFile = propertyFile(
+                102L,
+                "opaque-image-reference-102"
+        );
+        when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(
+                PROPERTY_ID
+        )).thenReturn(Optional.of(property));
+        when(propertyImageRepository
+                .findAllByPropertyIdAndDeletedAtIsNullOrderBySortOrderAsc(
+                        PROPERTY_ID
+                )).thenReturn(List.of(representative, second));
+        when(propertyFileRepository
+                .findAllByPropertyFileIdInAndDeletedAtIsNull(
+                        List.of(101L, 102L)
+                )).thenReturn(List.of(secondFile, representativeFile));
+        when(getUrlGenerator.generate("opaque-image-reference-101"))
+                .thenReturn("https://example.test/image-101");
+        when(getUrlGenerator.generate("opaque-image-reference-102"))
+                .thenReturn("https://example.test/image-102");
+
+        PropertyEditDetailResponse response =
+                propertyEditDetailService.getEditDetail(
+                        PROPERTY_ID,
+                        authorContext
+                );
+
+        assertThat(response.images()).hasSize(2);
+        assertThat(response.images().get(0).fileId()).isEqualTo(101L);
+        assertThat(response.images().get(0).imageUrl())
+                .isEqualTo("https://example.test/image-101");
+        assertThat(response.images().get(0).sortOrder()).isZero();
+        assertThat(response.images().get(0).representative()).isTrue();
+        assertThat(response.images().get(1).fileId()).isEqualTo(102L);
+        assertThat(response.images().get(1).imageUrl())
+                .isEqualTo("https://example.test/image-102");
+        assertThat(response.images().get(1).sortOrder()).isEqualTo(1);
+        assertThat(response.images().get(1).representative()).isFalse();
+        assertThat(PropertyEditImageResponse.class.getRecordComponents())
+                .extracting(component -> component.getName())
+                .containsExactly(
+                        "fileId",
+                        "imageUrl",
+                        "sortOrder",
+                        "representative"
+                );
+    }
+
+    @Test
+    void getEditDetail_deletedFileLink_omitsImageWithoutIssuingUrl() {
+        Property property = prepareProperty();
+        PropertyImage image = PropertyImage.create(
+                PROPERTY_ID,
+                101L,
+                0,
+                true,
+                null,
+                authorContext
+        );
+        when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(
+                PROPERTY_ID
+        )).thenReturn(Optional.of(property));
+        when(propertyImageRepository
+                .findAllByPropertyIdAndDeletedAtIsNullOrderBySortOrderAsc(
+                        PROPERTY_ID
+                )).thenReturn(List.of(image));
+        when(propertyFileRepository
+                .findAllByPropertyFileIdInAndDeletedAtIsNull(
+                        List.of(101L)
+                )).thenReturn(List.of());
+
+        PropertyEditDetailResponse response =
+                propertyEditDetailService.getEditDetail(
+                        PROPERTY_ID,
+                        authorContext
+                );
+
+        assertThat(response.images()).isEmpty();
+        verifyNoInteractions(getUrlGenerator);
+    }
+
+    @Test
+    void getEditDetail_verifiedFile_omitsImageWithoutIssuingUrl() {
+        assertUnavailableFileIsOmitted(UploadStatus.VERIFIED,
+                FilePurpose.PROPERTY_IMAGE, null);
+    }
+
+    @Test
+    void getEditDetail_nonPropertyImageFile_omitsImageWithoutIssuingUrl() {
+        assertUnavailableFileIsOmitted(UploadStatus.LINKED,
+                FilePurpose.VERIFICATION, null);
+    }
+
+    @Test
+    void getEditDetail_objectDeletedFile_omitsImageWithoutIssuingUrl() {
+        assertUnavailableFileIsOmitted(UploadStatus.LINKED,
+                FilePurpose.PROPERTY_IMAGE, Instant.now());
     }
 
     @Test
@@ -319,5 +468,47 @@ class PropertyEditDetailServiceTest {
                 .thenReturn(VerificationStatus.UNVERIFIED);
 
         return property;
+    }
+
+    private PropertyFile propertyFile(
+            Long fileId,
+            String objectKey
+    ) {
+        PropertyFile propertyFile = mock(PropertyFile.class);
+        when(propertyFile.getPropertyFileId()).thenReturn(fileId);
+        when(propertyFile.getObjectKey()).thenReturn(objectKey);
+        when(propertyFile.getUploadStatus()).thenReturn(UploadStatus.LINKED);
+        when(propertyFile.getFilePurpose()).thenReturn(FilePurpose.PROPERTY_IMAGE);
+        when(propertyFile.getObjectDeletedAt()).thenReturn(null);
+        return propertyFile;
+    }
+
+    private void assertUnavailableFileIsOmitted(
+            UploadStatus uploadStatus,
+            FilePurpose filePurpose,
+            Instant objectDeletedAt
+    ) {
+        Property property = prepareProperty();
+        PropertyImage image = PropertyImage.create(
+                PROPERTY_ID, 101L, 0, true, null, authorContext
+        );
+        PropertyFile file = propertyFile(101L, "opaque-image-reference-101");
+        when(file.getUploadStatus()).thenReturn(uploadStatus);
+        when(file.getFilePurpose()).thenReturn(filePurpose);
+        when(file.getObjectDeletedAt()).thenReturn(objectDeletedAt);
+        when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(PROPERTY_ID))
+                .thenReturn(Optional.of(property));
+        when(propertyImageRepository
+                .findAllByPropertyIdAndDeletedAtIsNullOrderBySortOrderAsc(PROPERTY_ID))
+                .thenReturn(List.of(image));
+        when(propertyFileRepository
+                .findAllByPropertyFileIdInAndDeletedAtIsNull(List.of(101L)))
+                .thenReturn(List.of(file));
+
+        PropertyEditDetailResponse response = propertyEditDetailService
+                .getEditDetail(PROPERTY_ID, authorContext);
+
+        assertThat(response.images()).isEmpty();
+        verifyNoInteractions(getUrlGenerator);
     }
 }

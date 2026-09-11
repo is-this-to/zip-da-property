@@ -53,6 +53,8 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
 property:
+  file-maintenance:
+    fixed-delay-ms: ${PROPERTY_FILE_MAINTENANCE_FIXED_DELAY_MS:900000}
   kafka:
     topic: ${PROPERTY_KAFKA_TOPIC:zipda.property.events.v1}
   location:
