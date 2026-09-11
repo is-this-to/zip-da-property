@@ -39,6 +39,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -188,12 +189,19 @@ public class PropertyVerificationService {
             ActorContext actorContext
     ) {
         Set<Long> fileIds = new HashSet<>();
-        for (PropertyVerificationEvidenceRequest evidenceRequest : evidenceRequests) {
+        List<PropertyVerificationEvidenceRequest> lockOrderedRequests =
+                evidenceRequests.stream()
+                        .sorted(Comparator.comparing(
+                                PropertyVerificationEvidenceRequest::propertyFileId
+                        ))
+                        .toList();
+        for (PropertyVerificationEvidenceRequest evidenceRequest
+                : lockOrderedRequests) {
             if (!fileIds.add(evidenceRequest.propertyFileId())) {
                 throw invalidEvidence("같은 증빙 파일을 중복으로 제출할 수 없습니다.");
             }
             PropertyFile file = propertyFileRepository
-                    .findByPropertyFileIdAndDeletedAtIsNull(evidenceRequest.propertyFileId())
+                    .findForVerificationLink(evidenceRequest.propertyFileId())
                     .orElseThrow(() -> invalidEvidence("증빙 파일을 찾을 수 없습니다."));
             if (!Objects.equals(file.getOwnerMemberId(), actorContext.memberId())) {
                 throw new BusinessException(

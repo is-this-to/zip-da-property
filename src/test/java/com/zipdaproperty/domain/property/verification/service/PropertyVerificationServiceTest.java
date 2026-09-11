@@ -116,7 +116,7 @@ class PropertyVerificationServiceTest {
         when(file.getOwnerMemberId()).thenReturn(OWNER_ID);
         when(file.getFilePurpose()).thenReturn(FilePurpose.VERIFICATION);
         when(file.isVerificationCompleted()).thenReturn(true);
-        when(propertyFileRepository.findByPropertyFileIdAndDeletedAtIsNull(FILE_ID)).thenReturn(Optional.of(file));
+        when(propertyFileRepository.findForVerificationLink(FILE_ID)).thenReturn(Optional.of(file));
         when(tsidGenerator.generate()).thenReturn(VERIFICATION_ID, EVIDENCE_ID);
         when(verificationRepository.saveAndFlush(any(PropertyVerification.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -170,7 +170,7 @@ class PropertyVerificationServiceTest {
                         eq(PropertyVerificationType.OWNER),
                         any()
                 )).thenReturn(false);
-        when(propertyFileRepository.findByPropertyFileIdAndDeletedAtIsNull(FILE_ID))
+        when(propertyFileRepository.findForVerificationLink(FILE_ID))
                 .thenReturn(Optional.of(file));
         when(file.getOwnerMemberId()).thenReturn(OWNER_ID);
         when(file.getFilePurpose()).thenReturn(FilePurpose.PROPERTY_IMAGE);
@@ -207,7 +207,7 @@ class PropertyVerificationServiceTest {
                         eq(PropertyVerificationType.OWNER),
                         any()
                 )).thenReturn(false);
-        when(propertyFileRepository.findByPropertyFileIdAndDeletedAtIsNull(FILE_ID))
+        when(propertyFileRepository.findForVerificationLink(FILE_ID))
                 .thenReturn(Optional.of(file));
         when(file.getOwnerMemberId()).thenReturn(OWNER_ID);
         when(file.getFilePurpose()).thenReturn(FilePurpose.VERIFICATION);

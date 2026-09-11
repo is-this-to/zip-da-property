@@ -2,7 +2,9 @@ package com.zipdaproperty.domain.file.repository;
 
 import com.zipdaproperty.domain.file.constant.UploadStatus;
 import com.zipdaproperty.domain.file.entity.PropertyFile;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -17,8 +19,31 @@ public interface PropertyFileRepository extends JpaRepository<PropertyFile, Long
             Long propertyFileId
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select propertyFile
+            from PropertyFile propertyFile
+            where propertyFile.propertyFileId = :propertyFileId
+              and propertyFile.deletedAt is null
+            """)
+    Optional<PropertyFile> findForVerificationLink(
+            @Param("propertyFileId") Long propertyFileId
+    );
+
     List<PropertyFile> findAllByPropertyFileIdInAndDeletedAtIsNull(
             Collection<Long> propertyFileIds
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select propertyFile
+            from PropertyFile propertyFile
+            where propertyFile.propertyFileId in :propertyFileIds
+              and propertyFile.deletedAt is null
+            order by propertyFile.propertyFileId asc
+            """)
+    List<PropertyFile> findAllForVerificationEvidenceCleanup(
+            @Param("propertyFileIds") Collection<Long> propertyFileIds
     );
 
     List<PropertyFile> findAllByDeletedAtIsNotNullAndObjectDeletedAtIsNull();
