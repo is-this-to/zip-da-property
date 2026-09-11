@@ -20,14 +20,14 @@ public class PropertyMapRegionAggregateQueryRepository {
                 aggregate_region.region_level,
                 aggregate_region.region_type,
                 COALESCE(
-                    MAX(ST_Y(aggregate_region.center_location)),
+                    MAX(ST_X(aggregate_region.center_location)),
                     (
                         MAX(region_boundary.south_west_latitude)
                         + MAX(region_boundary.north_east_latitude)
                     ) / 2
                 ) AS latitude,
                 COALESCE(
-                    MAX(ST_X(aggregate_region.center_location)),
+                    MAX(ST_Y(aggregate_region.center_location)),
                     (
                         MAX(region_boundary.south_west_longitude)
                         + MAX(region_boundary.north_east_longitude)
