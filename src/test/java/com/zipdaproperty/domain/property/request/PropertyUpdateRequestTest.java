@@ -59,6 +59,25 @@ class PropertyUpdateRequestTest {
     }
 
     @Test
+    void validate_optionsOnly_acceptsNonEmptyAndEmptyLists() {
+        for (String options : List.of("[]", "[{\"optionCode\":\"PARKING\",\"optionValue\":\"2\"}]")) {
+            PropertyUpdateRequest request = objectMapper.readValue(
+                    "{\"version\":3,\"options\":" + options + "}", PropertyUpdateRequest.class);
+            assertThat(request.isUpdateTargetProvided()).isTrue();
+            assertThat(VALIDATOR.validate(request)).isEmpty();
+            assertThat(request.fileIds()).isNull();
+        }
+    }
+
+    @Test
+    void validate_nullOptionsWithoutOtherTargets_rejects() {
+        PropertyUpdateRequest request = new PropertyUpdateRequest(3L, null, null, null, null);
+        assertThat(request.isUpdateTargetProvided()).isFalse();
+        assertThat(VALIDATOR.validate(request))
+                .anyMatch(violation -> violation.getPropertyPath().toString().equals("updateTargetProvided"));
+    }
+
+    @Test
     void validate_emptyFileIds_rejects() {
         PropertyUpdateRequest request = new PropertyUpdateRequest(
                 3L,

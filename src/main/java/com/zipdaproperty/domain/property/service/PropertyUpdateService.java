@@ -2,6 +2,10 @@ package com.zipdaproperty.domain.property.service;
 
 import com.zipdaproperty.domain.image.service.PropertyImageSyncService;
 import com.zipdaproperty.domain.image.service.PropertyImageSyncService.SyncPlan;
+import com.zipdaproperty.domain.option.command.PropertyOptionCreateCommand;
+import com.zipdaproperty.domain.option.service.PropertyOptionCommandService;
+import com.zipdaproperty.domain.option.service.PropertyOptionCommandService.OptionSyncPlan;
+import com.zipdaproperty.domain.property.request.PropertyOptionRequest;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyUpdateCommand;
@@ -77,6 +81,8 @@ public class PropertyUpdateService {
 
     private final PropertyAddressService propertyAddressService;
 
+    private final PropertyOptionCommandService propertyOptionCommandService;
+
     private final MemberWritePermissionService
             memberWritePermissionService;
 
@@ -119,6 +125,14 @@ public class PropertyUpdateService {
                                 : preparedAddress.regionId()
                 );
 
+        if (property.getPropertyType() != command.propertyType()
+                && request.options() == null) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_REQUEST,
+                    "매물 유형 변경 시 옵션 목록을 함께 전달해야 합니다."
+            );
+        }
+
         propertyUpdatePolicy.validate(command);
 
         validateRegion(command.regionId());
@@ -138,6 +152,17 @@ public class PropertyUpdateService {
                 )
                 : null;
 
+        List<PropertyOptionCreateCommand> optionCommands = request.options() == null
+                ? null
+                : request.options().stream().map(PropertyOptionRequest::toCommand).toList();
+        OptionSyncPlan optionSyncPlan = optionCommands == null
+                ? null
+                : propertyOptionCommandService.prepareSync(
+                        propertyId,
+                        command.propertyType(),
+                        optionCommands
+                );
+
         List<String> propertyChangedFields =
                 detectChangedFields(
                         property,
@@ -147,7 +172,8 @@ public class PropertyUpdateService {
                 );
         List<String> changedFields = mergeChangedFields(
                 propertyChangedFields,
-                imageSyncPlan
+                imageSyncPlan,
+                optionSyncPlan
         );
 
         validateActualChanges(changedFields);
@@ -226,7 +252,18 @@ public class PropertyUpdateService {
                         occurredAt
                 );
 
-        propertyRevisionRepository.save(revision);
+        PropertyRevision savedRevision = propertyRevisionRepository.save(revision);
+
+        if (optionSyncPlan != null && optionSyncPlan.changesRequired()) {
+            propertyOptionCommandService.synchronizeOptions(
+                    propertyId,
+                    savedRevision.getPropertyRevisionId(),
+                    command.propertyType(),
+                    optionCommands,
+                    "options",
+                    actorContext
+            );
+        }
 
         recordUpdateEvents(
                 savedProperty,
@@ -244,7 +281,8 @@ public class PropertyUpdateService {
 
     private List<String> mergeChangedFields(
             List<String> propertyChangedFields,
-            SyncPlan imageSyncPlan
+            SyncPlan imageSyncPlan,
+            OptionSyncPlan optionSyncPlan
     ) {
         List<String> changedFields = new ArrayList<>(
                 propertyChangedFields
@@ -252,6 +290,9 @@ public class PropertyUpdateService {
         if (imageSyncPlan != null
                 && imageSyncPlan.changesRequired()) {
             changedFields.add("fileIds");
+        }
+        if (optionSyncPlan != null && optionSyncPlan.changesRequired()) {
+            changedFields.add("options");
         }
         return changedFields.stream().sorted().toList();
     }

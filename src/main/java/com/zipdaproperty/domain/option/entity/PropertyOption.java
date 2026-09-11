@@ -63,6 +63,17 @@ public class PropertyOption extends BaseAuditEntity {
     recordUpdate(actorContext);
   }
 
+  public void changeValueAndDisplayOrder(
+          String optionValue,
+          int displayOrder,
+          ActorContext actorContext
+  ) {
+    ensureActive();
+    this.optionValue = requireBooleanValue(optionValue);
+    this.displayOrder = displayOrder;
+    recordUpdate(actorContext);
+  }
+
   public void softDelete(
           ActorContext actorContext,
           Instant deletedAt,

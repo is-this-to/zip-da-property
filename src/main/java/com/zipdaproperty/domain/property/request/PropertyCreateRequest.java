@@ -132,7 +132,10 @@ public record PropertyCreateRequest(
 
         @Valid
         @NotNull(message = "매물 주소는 필수입니다.")
-        PropertyAddressRequest address
+        PropertyAddressRequest address,
+
+        @NotNull(message = "옵션 목록은 필수입니다.")
+        List<@Valid PropertyOptionRequest> options
 
 ) {
 
@@ -163,7 +166,8 @@ public record PropertyCreateRequest(
                 title,
                 description,
                 fileIds,
-                address.toCommand()
+                address.toCommand(),
+                options.stream().map(PropertyOptionRequest::toCommand).toList()
         );
     }
 }

@@ -1,6 +1,7 @@
 package com.zipdaproperty.domain.property.service;
 
 import com.zipdaproperty.domain.image.service.PropertyImageLinkService;
+import com.zipdaproperty.domain.option.service.PropertyOptionCommandService;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyCreateCommand;
@@ -109,6 +110,8 @@ public class PropertyCreateService {
     private final MemberWritePermissionService
             memberWritePermissionService;
 
+    private final PropertyOptionCommandService propertyOptionCommandService;
+
     @Transactional
     public PropertyCreateResponse create(
             PropertyCreateCommand command,
@@ -192,6 +195,15 @@ public class PropertyCreateService {
                 propertyRevisionRepository.save(
                         propertyRevision
                 );
+
+        propertyOptionCommandService.createOptions(
+                savedProperty.getPropertyId(),
+                savedRevision.getPropertyRevisionId(),
+                savedProperty.getPropertyType(),
+                command.options(),
+                "options",
+                actorContext
+        );
 
         saveInitialStatusHistories(
                 savedProperty,

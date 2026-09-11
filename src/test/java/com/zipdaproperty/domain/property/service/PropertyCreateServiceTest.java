@@ -1,6 +1,8 @@
 package com.zipdaproperty.domain.property.service;
 
 import com.zipdaproperty.domain.image.service.PropertyImageLinkService;
+import com.zipdaproperty.domain.option.command.PropertyOptionCreateCommand;
+import com.zipdaproperty.domain.option.service.PropertyOptionCommandService;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyCreateCommand;
@@ -134,6 +136,9 @@ class PropertyCreateServiceTest {
 
     private PropertyCreateService propertyCreateService;
 
+    private final PropertyOptionCommandService propertyOptionCommandService =
+            mock(PropertyOptionCommandService.class);
+
     private final PropertyAddressService propertyAddressService =
             mock(PropertyAddressService.class);
 
@@ -163,7 +168,8 @@ class PropertyCreateServiceTest {
                         propertyAuditEventRecorder,
                         propertyKafkaEventPublisher,
                         propertyAddressService,
-                        memberWritePermissionService
+                        memberWritePermissionService,
+                        propertyOptionCommandService
                 );
 
         TransactionInterceptor interceptor =
@@ -223,6 +229,7 @@ class PropertyCreateServiceTest {
                         propertyImageLinkService,
                         propertyAddressService,
                         propertyRevisionRepository,
+                        propertyOptionCommandService,
                         propertyStatusHistoryRepository,
                         propertyPublisherSnapshotRepository,
                         transactionManager
@@ -254,6 +261,9 @@ class PropertyCreateServiceTest {
 
         order.verify(propertyRevisionRepository)
                 .save(any(PropertyRevision.class));
+
+        order.verify(propertyOptionCommandService).createOptions(
+                PROPERTY_ID, REVISION_ID, command.propertyType(), command.options(), "options", ownerContext);
 
         order.verify(propertyStatusHistoryRepository)
                 .saveAll(anyList());
@@ -728,6 +738,46 @@ class PropertyCreateServiceTest {
     private PropertyCreateCommand createValidCommand(
             PublisherType publisherType
     ) {
+        return createValidCommand(publisherType, List.of(new PropertyOptionCreateCommand("PARKING", "2")));
+    }
+
+    @Test
+    void create_emptyOptions_passesEmptyListToOptionService() {
+        stubValidCreatePersistence();
+        PropertyCreateCommand command = createValidCommand(PublisherType.DIRECT_OWNER, List.of());
+        propertyCreateService.create(command, ownerContext);
+        verify(propertyOptionCommandService).createOptions(
+                PROPERTY_ID, REVISION_ID, PropertyType.APARTMENT, List.of(), "options", ownerContext);
+    }
+
+    @Test
+    void create_optionFailure_rollsBackTransactionAfterRevisionAndSkipsEvents() {
+        stubValidCreatePersistence();
+        PropertyCreateCommand command = createValidCommand();
+        BusinessException failure = new BusinessException(CustomResponseCode.INVALID_REQUEST, "옵션 검증 실패");
+        doThrow(failure).when(propertyOptionCommandService).createOptions(
+                PROPERTY_ID, REVISION_ID, command.propertyType(), command.options(), "options", ownerContext);
+
+        assertThatThrownBy(() -> propertyCreateService.create(command, ownerContext)).isSameAs(failure);
+
+        InOrder order = inOrder(propertyRepository, propertyImageLinkService, propertyAddressService,
+                propertyRevisionRepository, propertyOptionCommandService, transactionManager);
+        order.verify(propertyRepository).saveAndFlush(any(Property.class));
+        order.verify(propertyImageLinkService).linkImages(PROPERTY_ID, FILE_IDS, ownerContext);
+        order.verify(propertyAddressService).create(any(Property.class), any(), eq(ownerContext));
+        order.verify(propertyRevisionRepository).save(any(PropertyRevision.class));
+        order.verify(propertyOptionCommandService).createOptions(
+                PROPERTY_ID, REVISION_ID, command.propertyType(), command.options(), "options", ownerContext);
+        order.verify(transactionManager).rollback(transactionStatus);
+        verify(transactionManager, never()).commit(any());
+        verifyNoInteractions(propertyStatusHistoryRepository, propertyPublisherSnapshotRepository,
+                propertyAuditEventRecorder, propertyKafkaEventPublisher);
+    }
+
+    private PropertyCreateCommand createValidCommand(
+            PublisherType publisherType,
+            List<PropertyOptionCreateCommand> options
+    ) {
         return new PropertyCreateCommand(
                 REGION_ID,
                 null,
@@ -764,7 +814,8 @@ class PropertyCreateServiceTest {
                         "2726010100",
                         new BigDecimal("128.625123"),
                         new BigDecimal("35.859321")
-                )
+                ),
+                options
         );
     }
 }

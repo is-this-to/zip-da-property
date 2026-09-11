@@ -1,9 +1,11 @@
 package com.zipdaproperty.domain.option.repository;
 
+import com.querydsl.core.types.Projections;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import com.zipdaproperty.domain.option.entity.PropertyOption;
 import com.zipdaproperty.domain.option.entity.PropertyOptionCode;
 import com.zipdaproperty.domain.option.entity.PropertyTypeOption;
+import com.zipdaproperty.domain.option.response.PropertyDetailOptionResponse;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -95,6 +97,72 @@ public class PropertyOptionQueryDSLRepository {
                         .fetchOne()
         );
     }
+
+    public List<PropertyEditOptionQueryRow> findEditOptions(
+            Long propertyId,
+            PropertyType propertyType
+    ) {
+        return queryFactory
+                .select(Projections.constructor(
+                        PropertyEditOptionQueryRow.class,
+                        propertyOptionCode.optionCode,
+                        propertyOptionCode.optionName,
+                        propertyOptionCode.optionCategory,
+                        propertyOption.optionValue,
+                        propertyTypeOption.required,
+                        propertyOption.displayOrder
+                ))
+                .from(propertyOption)
+                .join(propertyOptionCode)
+                .on(propertyOptionCode.optionCodeId.eq(propertyOption.optionCodeId))
+                .leftJoin(propertyTypeOption)
+                .on(
+                        propertyTypeOption.optionCodeId.eq(propertyOption.optionCodeId),
+                        propertyTypeOption.propertyType.eq(propertyType),
+                        propertyTypeOption.deletedAt.isNull()
+                )
+                .where(
+                        propertyOption.propertyId.eq(propertyId),
+                        propertyOption.deletedAt.isNull(),
+                        propertyOptionCode.deletedAt.isNull(),
+                        propertyOptionCode.active.isTrue()
+                )
+                .orderBy(
+                        propertyOption.displayOrder.asc(),
+                        propertyOption.propertyOptionId.asc()
+                )
+                .fetch();
+    }
+
+    public List<PropertyDetailOptionResponse> findDetailVisibleOptions(
+            Long propertyId
+    ) {
+        return queryFactory
+                .select(Projections.constructor(
+                        PropertyDetailOptionResponse.class,
+                        propertyOptionCode.optionCode,
+                        propertyOptionCode.optionName,
+                        propertyOptionCode.optionCategory,
+                        propertyOption.optionValue,
+                        propertyOption.displayOrder
+                ))
+                .from(propertyOption)
+                .join(propertyOptionCode)
+                .on(propertyOptionCode.optionCodeId.eq(propertyOption.optionCodeId))
+                .where(
+                        propertyOption.propertyId.eq(propertyId),
+                        propertyOption.deletedAt.isNull(),
+                        propertyOptionCode.deletedAt.isNull(),
+                        propertyOptionCode.active.isTrue(),
+                        propertyOptionCode.detailVisible.isTrue()
+                )
+                .orderBy(
+                        propertyOption.displayOrder.asc(),
+                        propertyOption.propertyOptionId.asc()
+                )
+                .fetch();
+    }
+
     public boolean existsByPropertyIdAndOptionCodeIdAndDeletedAtIsNull(
             Long propertyId,
             Long optionCodeId

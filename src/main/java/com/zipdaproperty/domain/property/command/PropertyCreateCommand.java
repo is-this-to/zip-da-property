@@ -1,5 +1,7 @@
 package com.zipdaproperty.domain.property.command;
 
+import com.zipdaproperty.domain.option.command.PropertyOptionCreateCommand;
+
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublisherType;
 import com.zipdaproperty.domain.property.constant.TransactionType;
@@ -34,6 +36,7 @@ public record PropertyCreateCommand(
         String title,
         String description,
         List<Long> fileIds,
-        PropertyAddressCommand address
+        PropertyAddressCommand address,
+        List<PropertyOptionCreateCommand> options
 ) {
 }
