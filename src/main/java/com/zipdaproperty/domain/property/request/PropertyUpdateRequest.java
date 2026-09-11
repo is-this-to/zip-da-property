@@ -1,6 +1,6 @@
 package com.zipdaproperty.domain.property.request;
 
-import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import tools.jackson.databind.JsonNode;
@@ -13,8 +13,21 @@ public record PropertyUpdateRequest(
         @PositiveOrZero(message = "version은 0 이상이어야 합니다.")
         Long version,
 
-        @NotEmpty(message = "changes에는 최소 한 개 이상의 수정 필드가 필요합니다.")
-        Map<String, JsonNode> changes
+        Map<String, JsonNode> changes,
+
+        @Valid
+        PropertyAddressRequest address
 
 ) {
+
+    public PropertyUpdateRequest {
+        changes = changes == null ? Map.of() : Map.copyOf(changes);
+    }
+
+    public PropertyUpdateRequest(
+            Long version,
+            Map<String, JsonNode> changes
+    ) {
+        this(version, changes, null);
+    }
 }

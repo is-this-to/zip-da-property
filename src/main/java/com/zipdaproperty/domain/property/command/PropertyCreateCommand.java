@@ -31,6 +31,7 @@ public record PropertyCreateCommand(
         Boolean hasElevator,
         Boolean isPetAllowed,
         String title,
-        String description
+        String description,
+        PropertyAddressCommand address
 ) {
 }

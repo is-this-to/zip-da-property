@@ -92,7 +92,7 @@ public enum CustomResponseCode {
     ),
     PROPERTY_PUBLIC_LOCATION_GENERATION_FAILED(
             HttpStatus.UNPROCESSABLE_CONTENT,
-            "P25"
+            "P29"
     ),
 
     // 매물 소유·중개 검증 관련

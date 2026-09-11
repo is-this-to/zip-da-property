@@ -5,6 +5,7 @@ import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublisherType;
 import com.zipdaproperty.domain.property.constant.TransactionType;
 import com.zipdaproperty.global.id.TsidString;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
@@ -116,7 +117,11 @@ public record PropertyCreateRequest(
         String title,
 
         @NotBlank(message = "매물 설명은 필수입니다.")
-        String description
+        String description,
+
+        @Valid
+        @NotNull(message = "매물 주소는 필수입니다.")
+        PropertyAddressRequest address
 
 ) {
 
@@ -145,7 +150,8 @@ public record PropertyCreateRequest(
                 hasElevator,
                 isPetAllowed,
                 title,
-                description
+                description,
+                address.toCommand()
         );
     }
 }
