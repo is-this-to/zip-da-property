@@ -14,6 +14,8 @@ import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
 import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
 import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
+import com.zipdaproperty.domain.property.member.service.MemberWritePermissionService;
+import com.zipdaproperty.domain.property.member.constant.MemberPermissionAction;
 import com.zipdaproperty.domain.property.repository.PropertyPublisherSnapshotRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
@@ -135,6 +137,9 @@ class PropertyCreateServiceTest {
     private final PropertyAddressService propertyAddressService =
             mock(PropertyAddressService.class);
 
+    private final MemberWritePermissionService
+            memberWritePermissionService =
+            mock(MemberWritePermissionService.class);
     private final ActorContext ownerContext =
             ActorContext.member(
                     AUTHOR_MEMBER_ID,
@@ -157,7 +162,8 @@ class PropertyCreateServiceTest {
                         propertyImageLinkService,
                         propertyAuditEventRecorder,
                         propertyKafkaEventPublisher,
-                        propertyAddressService
+                        propertyAddressService,
+                        memberWritePermissionService
                 );
 
         TransactionInterceptor interceptor =
@@ -224,6 +230,13 @@ class PropertyCreateServiceTest {
 
         order.verify(propertyRepository)
                 .saveAndFlush(any(Property.class));
+
+        verify(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_CREATE
+                );
 
         order.verify(propertyImageLinkService)
                 .linkImages(
@@ -598,6 +611,41 @@ class PropertyCreateServiceTest {
                 .thenReturn("{}");
 
         return preparedAddress;
+    }
+
+    @Test
+    void create_memberPermissionDenied_doesNotSave() {
+        PropertyCreateCommand command = createValidCommand();
+
+        doThrow(new BusinessException(
+                CustomResponseCode.MEMBER_PERMISSION_DENIED,
+                "권한 없음"
+        )).when(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_CREATE
+                );
+
+        assertThatThrownBy(() ->
+                propertyCreateService.create(
+                        command,
+                        ownerContext
+                )
+        )
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception ->
+                        ((BusinessException) exception)
+                                .getCustomResponseCode()
+                )
+                .isEqualTo(
+                        CustomResponseCode.MEMBER_PERMISSION_DENIED
+                );
+
+        verify(propertyRepository, never())
+                .saveAndFlush(any(Property.class));
+        verify(propertyRevisionRepository, never())
+                .save(any(PropertyRevision.class));
     }
 
     private PropertyCreateCommand createValidCommand() {

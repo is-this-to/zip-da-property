@@ -140,6 +140,14 @@ public enum CustomResponseCode {
             HttpStatus.BAD_GATEWAY,
             "E50"
     ),
+    MEMBER_PERMISSION_DENIED(
+            HttpStatus.FORBIDDEN,
+            "E51"
+    ),
+    MEMBER_API_UNAVAILABLE(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "E52"
+    ),
 
     // DB 관련
     DB_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "E80"),

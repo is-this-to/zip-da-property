@@ -80,7 +80,14 @@ class PropertyCreateRequestTest {
                   "exclusiveArea": 84.00,
                   "title": "등록 테스트",
                   "description": "매물 등록 테스트 설명",
-                  "fileIds": %s
+                  "fileIds": %s,
+                  "address": {
+                    "roadAddress": "대구 수성구 달구벌대로 2450",
+                    "jibunAddress": "대구광역시 수성구 범어동 123",
+                    "legalDongCode": "2726010100",
+                    "longitude": 128.625123,
+                    "latitude": 35.859321
+                  }
                 }
                 """.formatted(fileIds), PropertyCreateRequest.class);
     }
