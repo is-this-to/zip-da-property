@@ -143,10 +143,13 @@ public class PropertyVerificationService {
                     request.reason(), occurredAt,
                     occurredAt.plus(VERIFICATION_VALID_DAYS, ChronoUnit.DAYS), actorContext
             );
-            VerificationStatus approvedStatus = verification.getVerificationType()
-                    == PropertyVerificationType.OWNER
-                    ? VerificationStatus.OWNER_VERIFIED
-                    : VerificationStatus.AGENT_VERIFIED;
+            VerificationStatus approvedStatus = switch (
+                    verification.getVerificationType()
+            ) {
+                case OWNER -> VerificationStatus.OWNER_VERIFIED;
+                case TENANT -> VerificationStatus.TENANT_VERIFIED;
+                case AGENT_BROKERAGE -> VerificationStatus.AGENT_VERIFIED;
+            };
             property.changeVerificationStatus(approvedStatus, actorContext);
         } else {
             verification.reject(request.reason(), occurredAt, actorContext);

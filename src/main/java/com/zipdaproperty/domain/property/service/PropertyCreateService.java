@@ -235,7 +235,9 @@ public class PropertyCreateService {
         boolean isAllowed = switch (actorRole) {
             case USER ->
                     publisherType
-                            == PublisherType.DIRECT_OWNER;
+                            == PublisherType.DIRECT_OWNER
+                            || publisherType
+                            == PublisherType.DIRECT_TENANT;
 
             case AGENT ->
                     publisherType

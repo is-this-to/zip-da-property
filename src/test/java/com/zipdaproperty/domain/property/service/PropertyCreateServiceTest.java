@@ -331,6 +331,43 @@ class PropertyCreateServiceTest {
     }
 
     @Test
+    void create_validTenantRequest_savesDirectTenantProperty() {
+        PropertyCreateCommand command =
+                createValidCommand(
+                        PublisherType.DIRECT_TENANT
+                );
+
+        stubValidCreatePersistence();
+
+        PropertyCreateResponse response =
+                propertyCreateService.create(
+                        command,
+                        ownerContext
+                );
+
+        assertThat(response.propertyId())
+                .isEqualTo(PROPERTY_ID);
+
+        verify(propertyRepository)
+                .saveAndFlush(
+                        argThat(property ->
+                                property.getPublisherType()
+                                        == PublisherType.DIRECT_TENANT
+                        )
+                );
+
+        verify(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_CREATE
+                );
+
+        verify(transactionManager)
+                .commit(transactionStatus);
+    }
+
+    @Test
     void create_imageLinkFailure_rollsBackAndSkipsRelatedRecords() {
         PropertyCreateCommand command =
                 createValidCommand();
@@ -549,6 +586,40 @@ class PropertyCreateServiceTest {
                 .commit(any());
     }
 
+    @Test
+    void create_agentWithDirectTenant_throwsAndDoesNotSave() {
+        PropertyCreateCommand command =
+                createValidCommand(
+                        PublisherType.DIRECT_TENANT
+                );
+
+        ActorContext agentContext =
+                ActorContext.member(
+                        2002L,
+                        ActorRole.AGENT,
+                        "property-create-tenant-role-test"
+                );
+
+        assertThatThrownBy(
+                () -> propertyCreateService.create(
+                        command,
+                        agentContext
+                )
+        ).isInstanceOf(BusinessException.class);
+
+        verify(regionRepository, never())
+                .findByRegionIdAndIsActiveTrue(any());
+
+        verify(propertyRepository, never())
+                .saveAndFlush(any(Property.class));
+
+        verify(transactionManager)
+                .rollback(transactionStatus);
+
+        verify(transactionManager, never())
+                .commit(any());
+    }
+
     private PreparedPropertyAddress stubValidCreatePersistence() {
         when(
                 regionRepository
@@ -649,10 +720,18 @@ class PropertyCreateServiceTest {
     }
 
     private PropertyCreateCommand createValidCommand() {
+        return createValidCommand(
+                PublisherType.DIRECT_OWNER
+        );
+    }
+
+    private PropertyCreateCommand createValidCommand(
+            PublisherType publisherType
+    ) {
         return new PropertyCreateCommand(
                 REGION_ID,
                 null,
-                PublisherType.DIRECT_OWNER,
+                publisherType,
                 PropertyType.APARTMENT,
                 TransactionType.SALE,
                 500_000_000L,
