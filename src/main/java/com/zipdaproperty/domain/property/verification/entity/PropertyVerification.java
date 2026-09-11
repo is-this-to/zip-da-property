@@ -124,4 +124,21 @@ public class PropertyVerification extends BaseAuditEntity {
         this.resultReason = reason;
         recordUpdate(actorContext);
     }
+
+    public boolean expireIfDue(
+            Instant currentTime,
+            ActorContext actorContext
+    ) {
+        if (status != PropertyVerificationStatus.VERIFIED
+                || expiresAt == null
+                || expiresAt.isAfter(currentTime)) {
+            return false;
+        }
+
+        this.status = PropertyVerificationStatus.EXPIRED;
+        this.resultCode = "EXPIRED";
+        this.resultReason = "인증 유효기간이 만료되었습니다.";
+        recordUpdate(actorContext);
+        return true;
+    }
 }

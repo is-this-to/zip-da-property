@@ -6,6 +6,7 @@ import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.constant.TransactionStatus;
+import com.zipdaproperty.domain.property.constant.VerificationStatus;
 import com.zipdaproperty.domain.property.model.PropertyMapBounds;
 import lombok.RequiredArgsConstructor;
 import org.locationtech.jts.geom.Polygon;
@@ -102,6 +103,13 @@ public class PropertyMapBoundsQueryRepository {
                 )
                 .and(
                         property.deletedAt.isNull()
+                )
+                .and(
+                        property.verificationStatus.in(
+                                VerificationStatus.OWNER_VERIFIED,
+                                VerificationStatus.TENANT_VERIFIED,
+                                VerificationStatus.AGENT_VERIFIED
+                        )
                 )
                 .and(
                         propertyAddress.deletedAt.isNull()

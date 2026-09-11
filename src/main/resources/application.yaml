@@ -55,6 +55,8 @@ spring:
 property:
   file-maintenance:
     fixed-delay-ms: ${PROPERTY_FILE_MAINTENANCE_FIXED_DELAY_MS:900000}
+  verification-expiration:
+    fixed-delay-ms: ${PROPERTY_VERIFICATION_EXPIRATION_FIXED_DELAY_MS:60000}
   kafka:
     topic: ${PROPERTY_KAFKA_TOPIC:zipda.property.events.v1}
   location:
