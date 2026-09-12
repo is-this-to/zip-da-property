@@ -53,6 +53,8 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
 property:
+  idempotency-cleanup:
+    fixed-delay-ms: ${PROPERTY_IDEMPOTENCY_CLEANUP_FIXED_DELAY_MS:900000}
   file-maintenance:
     fixed-delay-ms: ${PROPERTY_FILE_MAINTENANCE_FIXED_DELAY_MS:900000}
   verification-expiration:

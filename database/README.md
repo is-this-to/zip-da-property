@@ -20,6 +20,7 @@
 11. `011_add_property_verification_expiration_index.sql`
 12. `012_add_property_verification_evidence_cleanup_indexes.sql`
 13. `013_add_property_verification_renewal_notification.sql`
+14. `014_add_property_idempotency_cleanup.sql`
 
 ## 실행 전 확인
 
@@ -107,6 +108,20 @@
 - 인덱스 생성 전 백업하고, 대상 테이블 크기에 따른 실행 시간과 잠금 영향을
   스테이징에서 먼저 확인합니다. 문제 발생 시 애플리케이션 배치를 중지한 뒤
   해당 인덱스를 제거하는 forward fix를 적용합니다.
+
+## 멱등 키 보존기간 만료 정리
+
+- 애플리케이션 배포 전에
+  `014_add_property_idempotency_cleanup.sql`을 한 번 실행합니다.
+- 기존 활성 UNIQUE 제약을 `active_idempotency_key` generated column 기반으로
+  변경하여 만료된 키를 soft delete한 뒤 같은 키를 다시 사용할 수 있게 합니다.
+- `expires_at`이 현재 시각 이하이고 아직 삭제되지 않은 기록을 한 번에 최대
+  100건씩 soft delete하며, 유효한 기록은 변경하지 않습니다.
+- 기본 실행 간격은 15분이며
+  `PROPERTY_IDEMPOTENCY_CLEANUP_FIXED_DELAY_MS`로 변경할 수 있습니다.
+- DDL 실행 전 백업하고 인덱스 변경 잠금 시간을 스테이징에서 확인합니다.
+  문제가 발생하면 배치를 중지한 뒤 기존 UNIQUE 인덱스로 되돌리는
+  forward fix를 적용합니다.
 
 ## 외래키 정책
 

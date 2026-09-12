@@ -41,6 +41,12 @@ public class PropertyIdempotencyService {
     private static final Duration IDEMPOTENCY_RETENTION_PERIOD =
             Duration.ofHours(24);
 
+    private static final String EXPIRED_DELETE_REASON =
+            "멱등 키 보존 기간이 만료되어 새 요청을 허용합니다.";
+
+    private static final String FAILED_DELETE_REASON =
+            "실패한 멱등 요청을 재시도할 수 있도록 비활성화합니다.";
+
     private final PropertyIdempotencyRepository
             propertyIdempotencyRepository;
 
@@ -206,7 +212,11 @@ public class PropertyIdempotencyService {
             ActorContext actorContext
     ) {
         if (existing.isExpired(currentTime)) {
-            propertyIdempotencyRepository.delete(existing);
+            existing.softDelete(
+                    actorContext,
+                    currentTime,
+                    EXPIRED_DELETE_REASON
+            );
             propertyIdempotencyRepository.flush();
 
             return registerProcessing(
@@ -238,7 +248,11 @@ public class PropertyIdempotencyService {
         }
 
         if (existing.isFailed()) {
-            propertyIdempotencyRepository.delete(existing);
+            existing.softDelete(
+                    actorContext,
+                    currentTime,
+                    FAILED_DELETE_REASON
+            );
             propertyIdempotencyRepository.flush();
 
             return registerProcessing(
