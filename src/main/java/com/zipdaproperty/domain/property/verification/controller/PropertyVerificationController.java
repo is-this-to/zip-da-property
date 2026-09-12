@@ -37,15 +37,19 @@ public class PropertyVerificationController {
     private final PropertyVerificationService propertyVerificationService;
 
     @Operation(summary = "매물 검증 신청")
-    @CustomApiResponse({
-            CustomResponseCode.INVALID_REQUEST,
-            CustomResponseCode.VERSION_CONFLICT,
-            CustomResponseCode.PROPERTY_NOT_FOUND,
-            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
-            CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
-            CustomResponseCode.PROPERTY_VERIFICATION_EVIDENCE_INVALID,
-            CustomResponseCode.FILE_OWNERSHIP_REQUIRED
-    })
+    @CustomApiResponse(
+            value = {
+                    CustomResponseCode.INVALID_REQUEST,
+                    CustomResponseCode.VERSION_CONFLICT,
+                    CustomResponseCode.PROPERTY_NOT_FOUND,
+                    CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+                    CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
+                    CustomResponseCode.PROPERTY_VERIFICATION_EVIDENCE_INVALID,
+                    CustomResponseCode.FILE_OWNERSHIP_REQUIRED
+            },
+            successResponseCode = "201",
+            successDescription = "CREATED"
+    )
     @PreAuthorize("hasAnyRole('USER', 'AGENT')")
     @PostMapping("/verifications")
     public ResponseEntity<GlobalResponseDTO<PropertyVerificationResponse>> submit(
@@ -62,15 +66,19 @@ public class PropertyVerificationController {
     }
 
     @Operation(summary = "집주인 매물 검증 신청")
-    @CustomApiResponse({
-            CustomResponseCode.INVALID_REQUEST,
-            CustomResponseCode.VERSION_CONFLICT,
-            CustomResponseCode.PROPERTY_NOT_FOUND,
-            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
-            CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
-            CustomResponseCode.PROPERTY_VERIFICATION_EVIDENCE_INVALID,
-            CustomResponseCode.FILE_OWNERSHIP_REQUIRED
-    })
+    @CustomApiResponse(
+            value = {
+                    CustomResponseCode.INVALID_REQUEST,
+                    CustomResponseCode.VERSION_CONFLICT,
+                    CustomResponseCode.PROPERTY_NOT_FOUND,
+                    CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+                    CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
+                    CustomResponseCode.PROPERTY_VERIFICATION_EVIDENCE_INVALID,
+                    CustomResponseCode.FILE_OWNERSHIP_REQUIRED
+            },
+            successResponseCode = "202",
+            successDescription = "ACCEPTED"
+    )
     @PreAuthorize("hasRole('USER')")
     @PostMapping("/verifications/owner")
     public ResponseEntity<GlobalResponseDTO<PropertyVerificationResponse>>
@@ -93,15 +101,19 @@ public class PropertyVerificationController {
     }
 
     @Operation(summary = "세입자 매물 검증 신청")
-    @CustomApiResponse({
-            CustomResponseCode.INVALID_REQUEST,
-            CustomResponseCode.VERSION_CONFLICT,
-            CustomResponseCode.PROPERTY_NOT_FOUND,
-            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
-            CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
-            CustomResponseCode.PROPERTY_VERIFICATION_EVIDENCE_INVALID,
-            CustomResponseCode.FILE_OWNERSHIP_REQUIRED
-    })
+    @CustomApiResponse(
+            value = {
+                    CustomResponseCode.INVALID_REQUEST,
+                    CustomResponseCode.VERSION_CONFLICT,
+                    CustomResponseCode.PROPERTY_NOT_FOUND,
+                    CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+                    CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
+                    CustomResponseCode.PROPERTY_VERIFICATION_EVIDENCE_INVALID,
+                    CustomResponseCode.FILE_OWNERSHIP_REQUIRED
+            },
+            successResponseCode = "202",
+            successDescription = "ACCEPTED"
+    )
     @PreAuthorize("hasRole('USER')")
     @PostMapping("/verifications/tenant")
     public ResponseEntity<GlobalResponseDTO<PropertyVerificationResponse>>
@@ -124,15 +136,19 @@ public class PropertyVerificationController {
     }
 
     @Operation(summary = "매물 재인증 신청")
-    @CustomApiResponse({
-            CustomResponseCode.INVALID_REQUEST,
-            CustomResponseCode.VERSION_CONFLICT,
-            CustomResponseCode.PROPERTY_NOT_FOUND,
-            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
-            CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
-            CustomResponseCode.PROPERTY_VERIFICATION_EVIDENCE_INVALID,
-            CustomResponseCode.FILE_OWNERSHIP_REQUIRED
-    })
+    @CustomApiResponse(
+            value = {
+                    CustomResponseCode.INVALID_REQUEST,
+                    CustomResponseCode.VERSION_CONFLICT,
+                    CustomResponseCode.PROPERTY_NOT_FOUND,
+                    CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+                    CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
+                    CustomResponseCode.PROPERTY_VERIFICATION_EVIDENCE_INVALID,
+                    CustomResponseCode.FILE_OWNERSHIP_REQUIRED
+            },
+            successResponseCode = "202",
+            successDescription = "ACCEPTED"
+    )
     @PreAuthorize("hasAnyRole('USER', 'AGENT')")
     @PostMapping("/reverification")
     public ResponseEntity<GlobalResponseDTO<PropertyVerificationResponse>>

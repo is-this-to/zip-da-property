@@ -80,25 +80,29 @@ public class PropertyController {
                     본문 위험 패턴을 검사합니다.
                     """
     )
-    @CustomApiResponse({
-            CustomResponseCode.UNAUTHENTICATED,
-            CustomResponseCode.FORBIDDEN,
-            CustomResponseCode.INVALID_REQUEST,
-            CustomResponseCode.INVALID_PRICE_COMBINATION,
-            CustomResponseCode.PROPERTY_CREATE_NOT_ALLOWED,
-            CustomResponseCode.PROPERTY_REGION_NOT_FOUND,
-            CustomResponseCode.PROPERTY_REGION_BOUNDARY_NOT_FOUND,
-            CustomResponseCode.PROPERTY_LOCATION_REGION_MISMATCH,
-            CustomResponseCode.PROPERTY_PUBLIC_LOCATION_GENERATION_FAILED,
-            CustomResponseCode.PROPERTY_REGISTRATION_RISK_BLOCKED,
-            CustomResponseCode.PROPERTY_DUPLICATE_DETECTED,
-            CustomResponseCode.IDEMPOTENCY_KEY_REQUIRED,
-            CustomResponseCode.IDEMPOTENCY_CONFLICT,
-            CustomResponseCode.IDEMPOTENCY_REQUEST_IN_PROGRESS,
-            CustomResponseCode.DB_ERROR,
-            CustomResponseCode.DB_DUPLICATED_KEY_ERROR,
-            CustomResponseCode.SYSTEM_ERROR
-    })
+    @CustomApiResponse(
+            value = {
+                    CustomResponseCode.UNAUTHENTICATED,
+                    CustomResponseCode.FORBIDDEN,
+                    CustomResponseCode.INVALID_REQUEST,
+                    CustomResponseCode.INVALID_PRICE_COMBINATION,
+                    CustomResponseCode.PROPERTY_CREATE_NOT_ALLOWED,
+                    CustomResponseCode.PROPERTY_REGION_NOT_FOUND,
+                    CustomResponseCode.PROPERTY_REGION_BOUNDARY_NOT_FOUND,
+                    CustomResponseCode.PROPERTY_LOCATION_REGION_MISMATCH,
+                    CustomResponseCode.PROPERTY_PUBLIC_LOCATION_GENERATION_FAILED,
+                    CustomResponseCode.PROPERTY_REGISTRATION_RISK_BLOCKED,
+                    CustomResponseCode.PROPERTY_DUPLICATE_DETECTED,
+                    CustomResponseCode.IDEMPOTENCY_KEY_REQUIRED,
+                    CustomResponseCode.IDEMPOTENCY_CONFLICT,
+                    CustomResponseCode.IDEMPOTENCY_REQUEST_IN_PROGRESS,
+                    CustomResponseCode.DB_ERROR,
+                    CustomResponseCode.DB_DUPLICATED_KEY_ERROR,
+                    CustomResponseCode.SYSTEM_ERROR
+            },
+            successResponseCode = "201",
+            successDescription = "CREATED"
+    )
     @PreAuthorize("hasAnyRole('USER', 'AGENT')")
     @PostMapping
     public ResponseEntity<GlobalResponseDTO<PropertyCreateResponse>>
@@ -399,16 +403,20 @@ public class PropertyController {
                     204 No Content를 반환합니다.
                     """
     )
-    @CustomApiResponse({
-            CustomResponseCode.UNAUTHENTICATED,
-            CustomResponseCode.FORBIDDEN,
-            CustomResponseCode.INVALID_REQUEST,
-            CustomResponseCode.VERSION_CONFLICT,
-            CustomResponseCode.PROPERTY_NOT_FOUND,
-            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
-            CustomResponseCode.DB_ERROR,
-            CustomResponseCode.SYSTEM_ERROR
-    })
+    @CustomApiResponse(
+            value = {
+                    CustomResponseCode.UNAUTHENTICATED,
+                    CustomResponseCode.FORBIDDEN,
+                    CustomResponseCode.INVALID_REQUEST,
+                    CustomResponseCode.VERSION_CONFLICT,
+                    CustomResponseCode.PROPERTY_NOT_FOUND,
+                    CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+                    CustomResponseCode.DB_ERROR,
+                    CustomResponseCode.SYSTEM_ERROR
+            },
+            successResponseCode = "204",
+            successDescription = "NO_CONTENT"
+    )
     @PreAuthorize(
             "hasAnyRole("
                     + "'USER', "
