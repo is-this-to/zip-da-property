@@ -3,6 +3,7 @@ package com.zipdaproperty.domain.property.verification.controller;
 import com.zipdaproperty.domain.property.verification.request.PropertyVerificationReviewRequest;
 import com.zipdaproperty.domain.property.verification.request.PropertyVerificationSubmitRequest;
 import com.zipdaproperty.domain.property.verification.response.PropertyVerificationResponse;
+import com.zipdaproperty.domain.property.verification.constant.PropertyVerificationType;
 import com.zipdaproperty.domain.property.verification.service.PropertyVerificationService;
 import com.zipdaproperty.global.config.openapi.CustomApiResponse;
 import com.zipdaproperty.global.context.ActorContext;
@@ -30,7 +31,7 @@ import java.util.Objects;
 @Tag(name = "Property Verification API", description = "매물 소유·중개 검증 신청 및 관리자 검토 API")
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/property/properties/{propertyId}/verifications")
+@RequestMapping("/api/property/properties/{propertyId}")
 public class PropertyVerificationController {
 
     private final PropertyVerificationService propertyVerificationService;
@@ -46,7 +47,7 @@ public class PropertyVerificationController {
             CustomResponseCode.FILE_OWNERSHIP_REQUIRED
     })
     @PreAuthorize("hasAnyRole('USER', 'AGENT')")
-    @PostMapping
+    @PostMapping("/verifications")
     public ResponseEntity<GlobalResponseDTO<PropertyVerificationResponse>> submit(
             @PathVariable Long propertyId,
             @RequestHeader(name = "If-Match", required = false) String ifMatch,
@@ -60,6 +61,94 @@ public class PropertyVerificationController {
                 .body(GlobalResponseDTO.success(response));
     }
 
+    @Operation(summary = "집주인 매물 검증 신청")
+    @CustomApiResponse({
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.PROPERTY_NOT_FOUND,
+            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+            CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
+            CustomResponseCode.PROPERTY_VERIFICATION_EVIDENCE_INVALID,
+            CustomResponseCode.FILE_OWNERSHIP_REQUIRED
+    })
+    @PreAuthorize("hasRole('USER')")
+    @PostMapping("/verifications/owner")
+    public ResponseEntity<GlobalResponseDTO<PropertyVerificationResponse>>
+    submitOwner(
+            @PathVariable Long propertyId,
+            @RequestHeader(name = "If-Match", required = false) String ifMatch,
+            @Valid @RequestBody PropertyVerificationSubmitRequest request,
+            @Parameter(hidden = true) ActorContext actorContext
+    ) {
+        validateVersionAgreement(parseIfMatch(ifMatch), request.version());
+        PropertyVerificationResponse response = propertyVerificationService
+                .submitForType(
+                        propertyId,
+                        PropertyVerificationType.OWNER,
+                        request,
+                        actorContext
+                );
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(GlobalResponseDTO.success(response));
+    }
+
+    @Operation(summary = "세입자 매물 검증 신청")
+    @CustomApiResponse({
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.PROPERTY_NOT_FOUND,
+            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+            CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
+            CustomResponseCode.PROPERTY_VERIFICATION_EVIDENCE_INVALID,
+            CustomResponseCode.FILE_OWNERSHIP_REQUIRED
+    })
+    @PreAuthorize("hasRole('USER')")
+    @PostMapping("/verifications/tenant")
+    public ResponseEntity<GlobalResponseDTO<PropertyVerificationResponse>>
+    submitTenant(
+            @PathVariable Long propertyId,
+            @RequestHeader(name = "If-Match", required = false) String ifMatch,
+            @Valid @RequestBody PropertyVerificationSubmitRequest request,
+            @Parameter(hidden = true) ActorContext actorContext
+    ) {
+        validateVersionAgreement(parseIfMatch(ifMatch), request.version());
+        PropertyVerificationResponse response = propertyVerificationService
+                .submitForType(
+                        propertyId,
+                        PropertyVerificationType.TENANT,
+                        request,
+                        actorContext
+                );
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(GlobalResponseDTO.success(response));
+    }
+
+    @Operation(summary = "매물 재인증 신청")
+    @CustomApiResponse({
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.PROPERTY_NOT_FOUND,
+            CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+            CustomResponseCode.PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS,
+            CustomResponseCode.PROPERTY_VERIFICATION_EVIDENCE_INVALID,
+            CustomResponseCode.FILE_OWNERSHIP_REQUIRED
+    })
+    @PreAuthorize("hasAnyRole('USER', 'AGENT')")
+    @PostMapping("/reverification")
+    public ResponseEntity<GlobalResponseDTO<PropertyVerificationResponse>>
+    resubmit(
+            @PathVariable Long propertyId,
+            @RequestHeader(name = "If-Match", required = false) String ifMatch,
+            @Valid @RequestBody PropertyVerificationSubmitRequest request,
+            @Parameter(hidden = true) ActorContext actorContext
+    ) {
+        validateVersionAgreement(parseIfMatch(ifMatch), request.version());
+        PropertyVerificationResponse response = propertyVerificationService
+                .resubmit(propertyId, request, actorContext);
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(GlobalResponseDTO.success(response));
+    }
+
     @Operation(summary = "매물 검증 승인 또는 반려")
     @CustomApiResponse({
             CustomResponseCode.INVALID_REQUEST,
@@ -70,7 +159,7 @@ public class PropertyVerificationController {
             CustomResponseCode.PROPERTY_VERIFICATION_REVIEW_NOT_ALLOWED
     })
     @PreAuthorize("hasAnyRole('CS_ADMIN', 'SUPER_ADMIN')")
-    @PatchMapping("/{verificationId}")
+    @PatchMapping("/verifications/{verificationId}")
     public ResponseEntity<GlobalResponseDTO<PropertyVerificationResponse>> review(
             @PathVariable Long propertyId,
             @PathVariable Long verificationId,

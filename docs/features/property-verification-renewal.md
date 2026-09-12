@@ -9,6 +9,20 @@
 - 재인증이 승인되면 이전 인증 요청을 대체하고 승인 시점부터 30일을 다시 계산합니다.
 - 실제 만료 시 검색 노출 제외는 기존 인증 만료 배치가 처리합니다.
 
+## API 계약
+
+- 집주인 인증 신청:
+  `POST /api/property/properties/{propertyId}/verifications/owner`
+- 세입자 인증 신청:
+  `POST /api/property/properties/{propertyId}/verifications/tenant`
+- 재인증 신청:
+  `POST /api/property/properties/{propertyId}/reverification`
+- 신청 API는 `If-Match`와 본문 `version`이 일치해야 하며
+  접수 성공 시 `202 Accepted`를 반환합니다.
+- 집주인·세입자 경로의 인증 유형은 요청자가 선택하지 않고
+  서버가 매물의 `publisherType`과 경로를 함께 검증합니다.
+- 기존 공통 `POST .../verifications` 경로는 하위 호환을 위해 유지합니다.
+
 ## 알림 흐름
 
 1. 배치가 7일 이내 만료 예정이며 미안내 상태인 인증을 최대 100건 조회합니다.
