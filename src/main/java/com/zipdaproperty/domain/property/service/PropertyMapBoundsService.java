@@ -2,6 +2,7 @@ package com.zipdaproperty.domain.property.service;
 
 import com.zipdaproperty.domain.property.constant.PropertyMapResponseType;
 import com.zipdaproperty.domain.property.model.PropertyMapBounds;
+import com.zipdaproperty.domain.property.model.PropertyMapSearchCondition;
 import com.zipdaproperty.domain.property.policy.PropertyMapZoomPolicy;
 import com.zipdaproperty.domain.property.repository.PropertyMapBoundsQueryRepository;
 import com.zipdaproperty.domain.property.repository.PropertyMapBoundsQueryRow;
@@ -38,6 +39,8 @@ public class PropertyMapBoundsService {
             PropertyMapBoundsRequest request
     ) {
         PropertyMapBounds bounds = request.toBounds();
+        PropertyMapSearchCondition condition =
+                request.toSearchCondition();
 
         PropertyMapResponseType responseType =
                 propertyMapZoomPolicy.resolveResponseType(
@@ -45,14 +48,22 @@ public class PropertyMapBoundsService {
                 );
 
         if (responseType == PropertyMapResponseType.REGION_AGGREGATE) {
-            return findRegionAggregates(bounds);
+            return findRegionAggregates(
+                    bounds,
+                    condition
+            );
         }
 
-        return findPropertyItems(bounds, responseType);
+        return findPropertyItems(
+                bounds,
+                condition,
+                responseType
+        );
     }
 
     private PropertyMapBoundsResponse findRegionAggregates(
-            PropertyMapBounds bounds
+            PropertyMapBounds bounds,
+            PropertyMapSearchCondition condition
     ) {
         int targetRegionLevel =
                 propertyMapZoomPolicy.resolveAggregationRegionLevel(
@@ -62,6 +73,7 @@ public class PropertyMapBoundsService {
         List<PropertyMapRegionAggregateQueryRow> rows =
                 propertyMapRegionAggregateQueryRepository.findRegionAggregates(
                         bounds,
+                        condition,
                         targetRegionLevel
                 );
 
@@ -84,13 +96,15 @@ public class PropertyMapBoundsService {
 
     private PropertyMapBoundsResponse findPropertyItems(
             PropertyMapBounds bounds,
+            PropertyMapSearchCondition condition,
             PropertyMapResponseType responseType
     ) {
 
         long totalCount =
                 propertyMapBoundsQueryRepository
                         .countPublicPropertiesInBounds(
-                                bounds
+                                bounds,
+                                condition
                         );
 
         if (totalCount == 0L) {
@@ -106,6 +120,7 @@ public class PropertyMapBoundsService {
                 propertyMapBoundsQueryRepository
                         .findPublicPropertiesInBounds(
                                 bounds,
+                                condition,
                                 MAX_MAP_ITEMS
                         );
 

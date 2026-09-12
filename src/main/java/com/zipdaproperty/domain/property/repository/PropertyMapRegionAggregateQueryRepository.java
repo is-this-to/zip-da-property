@@ -1,13 +1,22 @@
 package com.zipdaproperty.domain.property.repository;
 
 import com.zipdaproperty.domain.property.model.PropertyMapBounds;
+import com.zipdaproperty.domain.property.constant.PropertyType;
+import com.zipdaproperty.domain.property.constant.PublisherType;
+import com.zipdaproperty.domain.property.constant.TransactionType;
+import com.zipdaproperty.domain.property.model.PropertyMapSearchCondition;
 import com.zipdaproperty.domain.region.constant.RegionType;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.query.NativeQuery;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 @Repository
 @RequiredArgsConstructor
@@ -64,8 +73,103 @@ public class PropertyMapRegionAggregateQueryRepository {
                 AND region_boundary.deleted_at IS NULL
             WHERE property.publication_status = 'PUBLISHED'
               AND property.transaction_status IN ('AVAILABLE', 'RESERVED')
+              AND property.verification_status IN (
+                  'OWNER_VERIFIED',
+                  'TENANT_VERIFIED',
+                  'AGENT_VERIFIED'
+              )
               AND property.deleted_at IS NULL
               AND property_address.deleted_at IS NULL
+              AND property.property_type IN (:propertyTypes)
+              AND property.transaction_type IN (:transactionTypes)
+              AND property.publisher_type IN (:publisherTypes)
+              AND (
+                  (
+                      property.transaction_type = 'SALE'
+                      AND (
+                          :minSalePriceEnabled = FALSE
+                          OR property.sale_price >= :minSalePrice
+                      )
+                      AND (
+                          :maxSalePriceEnabled = FALSE
+                          OR property.sale_price <= :maxSalePrice
+                      )
+                  )
+                  OR (
+                      property.transaction_type = 'JEONSE'
+                      AND (
+                          :minDepositEnabled = FALSE
+                          OR property.deposit >= :minDeposit
+                      )
+                      AND (
+                          :maxDepositEnabled = FALSE
+                          OR property.deposit <= :maxDeposit
+                      )
+                  )
+                  OR (
+                      property.transaction_type = 'MONTHLY_RENT'
+                      AND (
+                          :minDepositEnabled = FALSE
+                          OR property.deposit >= :minDeposit
+                      )
+                      AND (
+                          :maxDepositEnabled = FALSE
+                          OR property.deposit <= :maxDeposit
+                      )
+                      AND (
+                          :minMonthlyRentEnabled = FALSE
+                          OR property.monthly_rent >= :minMonthlyRent
+                      )
+                      AND (
+                          :maxMonthlyRentEnabled = FALSE
+                          OR property.monthly_rent <= :maxMonthlyRent
+                      )
+                  )
+              )
+              AND (
+                  :minMaintenanceFeeEnabled = FALSE
+                  OR property.maintenance_fee >= :minMaintenanceFee
+              )
+              AND (
+                  :maxMaintenanceFeeEnabled = FALSE
+                  OR property.maintenance_fee <= :maxMaintenanceFee
+              )
+              AND (
+                  :minExclusiveAreaEnabled = FALSE
+                  OR property.exclusive_area >= :minExclusiveArea
+              )
+              AND (
+                  :maxExclusiveAreaEnabled = FALSE
+                  OR property.exclusive_area <= :maxExclusiveArea
+              )
+              AND (
+                  :roomCountMinEnabled = FALSE
+                  OR property.room_count >= :roomCountMin
+              )
+              AND (
+                  :roomCountMaxEnabled = FALSE
+                  OR property.room_count <= :roomCountMax
+              )
+              AND (
+                  :approvalDateFromEnabled = FALSE
+                  OR property.approval_date >= :approvalDateFrom
+              )
+              AND (
+                  :approvalDateToEnabled = FALSE
+                  OR property.approval_date <= :approvalDateTo
+              )
+              AND (
+                  :parkingFilterEnabled = FALSE
+                  OR property.is_parking_available = :parkingValue
+              )
+              AND (
+                  :elevatorFilterEnabled = FALSE
+                  OR property.has_elevator = :elevatorValue
+              )
+              AND (
+                  :petFilterEnabled = FALSE
+                  OR property.is_pet_allowed = :petValue
+              )
               AND source_region.is_active = TRUE
               AND source_region.deleted_at IS NULL
               AND aggregate_region.is_active = TRUE
@@ -101,6 +205,7 @@ public class PropertyMapRegionAggregateQueryRepository {
     @SuppressWarnings("unchecked")
     public List<PropertyMapRegionAggregateQueryRow> findRegionAggregates(
             PropertyMapBounds bounds,
+            PropertyMapSearchCondition condition,
             int targetRegionLevel
     ) {
         Query query = entityManager.createNativeQuery(REGION_AGGREGATE_SQL);
@@ -114,11 +219,220 @@ public class PropertyMapRegionAggregateQueryRepository {
                 targetRegionLevel
         );
 
+        bindSearchCondition(
+                query,
+                condition
+        );
+
         List<Object[]> rows = query.getResultList();
 
         return rows.stream()
                 .map(this::toQueryRow)
                 .toList();
+    }
+
+    private void bindSearchCondition(
+            Query query,
+            PropertyMapSearchCondition condition
+    ) {
+        NativeQuery<?> nativeQuery =
+                query.unwrap(NativeQuery.class);
+
+        nativeQuery.setParameterList(
+                "propertyTypes",
+                effectiveNames(
+                        condition.propertyTypes(),
+                        PropertyType.class
+                )
+        );
+        nativeQuery.setParameterList(
+                "transactionTypes",
+                effectiveNames(
+                        condition.transactionTypes(),
+                        TransactionType.class
+                )
+        );
+        nativeQuery.setParameterList(
+                "publisherTypes",
+                effectiveNames(
+                        condition.publisherTypes(),
+                        PublisherType.class
+                )
+        );
+
+        bindLongFilter(
+                query,
+                "minSalePrice",
+                condition.minSalePrice()
+        );
+        bindLongFilter(
+                query,
+                "maxSalePrice",
+                condition.maxSalePrice()
+        );
+        bindLongFilter(
+                query,
+                "minDeposit",
+                condition.minDeposit()
+        );
+        bindLongFilter(
+                query,
+                "maxDeposit",
+                condition.maxDeposit()
+        );
+        bindLongFilter(
+                query,
+                "minMonthlyRent",
+                condition.minMonthlyRent()
+        );
+        bindLongFilter(
+                query,
+                "maxMonthlyRent",
+                condition.maxMonthlyRent()
+        );
+        bindLongFilter(
+                query,
+                "minMaintenanceFee",
+                condition.minMaintenanceFee()
+        );
+        bindLongFilter(
+                query,
+                "maxMaintenanceFee",
+                condition.maxMaintenanceFee()
+        );
+        bindDecimalFilter(
+                query,
+                "minExclusiveArea",
+                condition.minExclusiveArea()
+        );
+        bindDecimalFilter(
+                query,
+                "maxExclusiveArea",
+                condition.maxExclusiveArea()
+        );
+        bindIntegerFilter(
+                query,
+                "roomCountMin",
+                condition.roomCountMin()
+        );
+        bindIntegerFilter(
+                query,
+                "roomCountMax",
+                condition.roomCountMax()
+        );
+        bindDateFilter(
+                query,
+                "approvalDateFrom",
+                condition.approvalDateFrom()
+        );
+        bindDateFilter(
+                query,
+                "approvalDateTo",
+                condition.approvalDateTo()
+        );
+        bindBooleanFilter(
+                query,
+                "parking",
+                condition.isParkingAvailable()
+        );
+        bindBooleanFilter(
+                query,
+                "elevator",
+                condition.hasElevator()
+        );
+        bindBooleanFilter(
+                query,
+                "pet",
+                condition.isPetAllowed()
+        );
+    }
+
+    private <E extends Enum<E>> List<String> effectiveNames(
+            Set<E> selectedValues,
+            Class<E> enumType
+    ) {
+        Set<E> effectiveValues = selectedValues.isEmpty()
+                ? EnumSet.allOf(enumType)
+                : selectedValues;
+
+        return effectiveValues.stream()
+                .map(Enum::name)
+                .toList();
+    }
+
+    private void bindLongFilter(
+            Query query,
+            String parameterName,
+            Long value
+    ) {
+        query.setParameter(
+                parameterName + "Enabled",
+                value != null
+        );
+        query.setParameter(
+                parameterName,
+                value == null ? 0L : value
+        );
+    }
+
+    private void bindDecimalFilter(
+            Query query,
+            String parameterName,
+            BigDecimal value
+    ) {
+        query.setParameter(
+                parameterName + "Enabled",
+                value != null
+        );
+        query.setParameter(
+                parameterName,
+                value == null ? BigDecimal.ZERO : value
+        );
+    }
+
+    private void bindIntegerFilter(
+            Query query,
+            String parameterName,
+            Integer value
+    ) {
+        query.setParameter(
+                parameterName + "Enabled",
+                value != null
+        );
+        query.setParameter(
+                parameterName,
+                value == null ? 0 : value
+        );
+    }
+
+    private void bindDateFilter(
+            Query query,
+            String parameterName,
+            LocalDate value
+    ) {
+        query.setParameter(
+                parameterName + "Enabled",
+                value != null
+        );
+        query.setParameter(
+                parameterName,
+                value == null ? LocalDate.of(1970, 1, 1) : value
+        );
+    }
+
+    private void bindBooleanFilter(
+            Query query,
+            String parameterPrefix,
+            Boolean value
+    ) {
+        query.setParameter(
+                parameterPrefix + "FilterEnabled",
+                value != null
+        );
+        query.setParameter(
+                parameterPrefix + "Value",
+                Boolean.TRUE.equals(value)
+        );
     }
 
     private PropertyMapRegionAggregateQueryRow toQueryRow(Object[] row) {
