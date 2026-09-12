@@ -5,6 +5,7 @@
 - Baseline: final v1.6 Property SRS, API specification, and database definition artifacts.
 - Implementation: `origin/dev` at `29cdd04` and the source, tests, configuration, and schema files present in this repository.
 - User-approved deviation: Property events use direct Kafka publication. The Outbox table and Outbox pattern are intentionally excluded even though the final v1.6 baseline describes them.
+- User-approved contract override: APIs owned by 임호탁 use the `/api/property/properties/**` service path. This path is not an incomplete item in 임호탁's scope.
 - This document does not treat an unmerged remote feature branch as completed code.
 
 The audit checks the whole Property backend, not only one developer's assigned features. The September 11 completion target has passed; the remaining work below must therefore be treated as completion blockers rather than later phases.
@@ -15,8 +16,8 @@ The core Property write flows are in good condition: creation, partial update, t
 
 The whole final backend is not 90–99% complete. Against the final 49-API catalog and complete database scope, the evidence-based estimate is **about 55–60%**. This is a range rather than a fabricated exact value:
 
-- 3 API contracts match the catalog directly.
-- 18 catalog functions have an implementation or architectural equivalent, but their URL/method/shape differs from the catalog.
+- 8 API contracts match the catalog directly or use the user-approved 임호탁 service path.
+- 13 catalog functions have an implementation or architectural equivalent, but their URL/method/shape still requires the relevant owner's contract decision.
 - 27 catalog APIs are absent from `dev`.
 - 1 report API exists only on an old, unmerged teammate branch.
 - 18 schema tables are created locally versus 33 expected tables after intentionally excluding Outbox; several missing tables belong to teammate domains.
@@ -26,16 +27,13 @@ The earlier 90–99% numbers measured a narrower sequence of the current develop
 
 ## 3. Highest-priority findings
 
-### Critical — Public API base-path contract is inconsistent
+### High — Other owners' public API contracts still require coordination
 
-The final API catalog and SRS use `/api/properties/**`, `/api/regions/**`, `/api/locations/**`, and `/api/property-files/**`. The implementation commonly exposes `/api/property/properties/**`, `/api/property/regions/**`, `/api/property/locations/**`, and `/api/property/files/**`.
+The user confirmed `/api/property/properties/**` as the correct path for APIs owned by 임호탁. Those endpoints must not be treated as incomplete due to the final workbook's shorter prefix.
 
-This is not a Git merge issue and is not caused merely by adding text to a PR. It is a runtime contract mismatch that can produce gateway routing failures and client 404/405 responses. Before bulk renaming, the team must decide which source is authoritative:
+The remaining Region, Location, File, Map, and Option path differences belong to the relevant API owners. Before bulk renaming their paths, those owners must decide which source is authoritative and align gateway routes, clients, documentation, and tests together.
 
-1. Preserve the final specification and change controller/gateway paths, or
-2. Approve the new `/api/property` prefix and update gateway routes, API specification, clients, and tests together.
-
-Do not silently support both paths without a deliberate compatibility policy.
+Do not implement or rename another owner's endpoints as part of 임호탁's remaining work.
 
 ### Critical — Clean database creation is incomplete and ordering is ambiguous
 
@@ -52,8 +50,8 @@ The status of all 49 catalog entries is summarized below.
 
 | Status | API numbers | Count | Notes |
 |---|---:|---:|---|
-| Direct contract match | 15, 18, 19 | 3 | My properties and favorite APIs |
-| Functional implementation with contract mismatch/equivalent | 1–4, 6–7, 10–14, 34–35, 37–39, 48–49 | 18 | Mostly `/api/property` prefix mismatch; verification is generic rather than owner/tenant/reverification endpoints; Member integration is Kafka rather than HTTP |
+| Direct or user-approved contract | 10–15, 18–19 | 8 | 임호탁 property service path is approved; My properties and favorite APIs match directly |
+| Functional implementation with owner decision/equivalent | 1–4, 6–7, 34–35, 37–39, 48–49 | 13 | Other-owner prefixes need their decision; verification is generic; Member integration is Kafka rather than HTTP |
 | Missing from `dev` | 5, 8–9, 16–17, 20–33, 36, 41–47 | 27 | Validation endpoint, public list/detail, complexes, search state/history/preferences, file delete, report/admin report APIs, exact-location internal API |
 | Only on unmerged remote branch | 40 | 1 | `origin/feature/report_JSL` contains an old report-create implementation only |
 
@@ -119,20 +117,16 @@ Tables expected by the final baseline but absent from current schema scripts inc
 
 Work should continue in this order to reduce rework:
 
-1. Resolve the API base-path authority with the gateway/client owners.
-2. Repair schema numbering and README order; add Region DDL and prove clean database creation.
-3. Rebase and review teammate report work instead of merging its old branch blindly; complete report APIs 40–46.
-4. Complete the other missing teammate-owned API domains: complexes, search/list/detail, saved/recent search, preferences, file delete, and internal exact-location access.
-5. Implement FR-PR-038 duplicate/fraud detection with regression tests.
-6. Implement idempotency cleanup and exact-location/address retention processing.
-7. Lock the Member event contract decision (Kafka replacement versus catalog HTTP API) and verification endpoint contract.
-8. Add a versioned OpenAPI contract, gateway security evidence, metrics, resilience behavior, clean-schema integration tests, true concurrency tests, and performance checks.
-9. Run the full test suite and final diff/schema/API security review.
+1. Implement idempotency cleanup in 임호탁's scope.
+2. Define FR-PR-038 duplicate/fraud rules, then implement them with regression tests.
+3. Add true concurrency tests and complete 임호탁's common OpenAPI/error examples.
+4. Coordinate, but do not implement, the remaining Region/search/report/file/complex work owned by other developers.
+5. Run the full test suite and final diff/schema/API security review.
 
 ## 7. Accepted deviations and remaining decisions
 
 - **Accepted:** direct Kafka publication without Outbox, per explicit user decision. Known trade-off: a database commit can succeed while publication fails, so event loss/recovery behavior must be accepted or separately mitigated.
-- **Decision required:** final API path prefix.
+- **Accepted:** 임호탁-owned Property APIs use `/api/property/properties/**`.
 - **Decision required:** Member inbound integration through Kafka instead of API 48.
 - **Decision required:** generic verification submission/review endpoints versus the three catalog submission endpoints.
 - **Coordination required:** ownership and integration plan for report, search, complex, Region/subway, and public query domains.
