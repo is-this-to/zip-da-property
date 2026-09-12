@@ -265,6 +265,91 @@ class PropertyUpdateServiceTest {
     }
 
     @Test
+    void update_addressChangeFailure_recordsNoRevisionAuditOrKafkaEvent() {
+        Property property = prepareExistingProperty(CURRENT_VERSION);
+        prepareCompletePropertyState(property);
+
+        PropertyAddressRequest addressRequest =
+                new PropertyAddressRequest(
+                        "대구 수성구 달구벌대로 2450",
+                        "대구광역시 수성구 범어동 123",
+                        "2726010100",
+                        new BigDecimal("128.625123"),
+                        new BigDecimal("35.859321")
+                );
+
+        PropertyUpdateRequest request =
+                new PropertyUpdateRequest(
+                        CURRENT_VERSION,
+                        Map.of(),
+                        addressRequest
+                );
+
+        PreparedPropertyAddress preparedAddress =
+                mock(PreparedPropertyAddress.class);
+
+        when(preparedAddress.regionId())
+                .thenReturn(REGION_ID);
+
+        when(
+                propertyAddressService.prepare(
+                        eq(PROPERTY_ID),
+                        any(PropertyAddressCommand.class)
+                )
+        ).thenReturn(preparedAddress);
+
+        PropertyUpdateCommand command =
+                createUpdateCommand(
+                        CURRENT_VERSION,
+                        BEFORE_TITLE
+                );
+
+        when(
+                propertyUpdateCommandFactory.create(
+                        property,
+                        request,
+                        REGION_ID
+                )
+        ).thenReturn(command);
+
+        when(
+                regionRepository
+                        .findByRegionIdAndIsActiveTrue(REGION_ID)
+        ).thenReturn(Optional.of(mock(Region.class)));
+
+        when(objectMapper.writeValueAsString(property))
+                .thenReturn("{}");
+
+        doThrow(new BusinessException(
+                CustomResponseCode.NOT_FOUND_RESOURCE,
+                "수정할 매물 주소를 찾을 수 없습니다."
+        )).when(propertyAddressService).change(
+                property,
+                preparedAddress,
+                ownerContext
+        );
+
+        assertThatThrownBy(
+                () -> propertyUpdateService.update(
+                        PROPERTY_ID,
+                        request,
+                        ownerContext
+                )
+        ).isInstanceOfSatisfying(
+                BusinessException.class,
+                exception ->
+                        assertThat(exception.getCustomResponseCode())
+                                .isEqualTo(
+                                        CustomResponseCode.NOT_FOUND_RESOURCE
+                                )
+        );
+
+        verify(propertyRevisionRepository, never())
+                .save(any(PropertyRevision.class));
+        verifyNoDomainEventsRecorded();
+    }
+
+    @Test
     void update_ownerAndValidVersion_savesPropertyRevisionAuditAndPublishesKafkaEvent() {
         Property property =
                 prepareExistingProperty(CURRENT_VERSION);
@@ -369,7 +454,8 @@ class PropertyUpdateServiceTest {
 
         verifyNoInteractions(
                 propertyImageSyncService,
-                entityManager
+                entityManager,
+                propertyAddressService
         );
 
         ArgumentCaptor<PropertyRevision> revisionCaptor =
