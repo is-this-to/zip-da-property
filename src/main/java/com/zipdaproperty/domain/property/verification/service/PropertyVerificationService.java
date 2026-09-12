@@ -74,19 +74,73 @@ public class PropertyVerificationService {
             PropertyVerificationSubmitRequest request,
             ActorContext actorContext
     ) {
+        return submit(
+                propertyId,
+                request,
+                null,
+                false,
+                actorContext
+        );
+    }
+
+    @Transactional
+    public PropertyVerificationResponse submitForType(
+            Long propertyId,
+            PropertyVerificationType expectedType,
+            PropertyVerificationSubmitRequest request,
+            ActorContext actorContext
+    ) {
+        return submit(
+                propertyId,
+                request,
+                expectedType,
+                false,
+                actorContext
+        );
+    }
+
+    @Transactional
+    public PropertyVerificationResponse resubmit(
+            Long propertyId,
+            PropertyVerificationSubmitRequest request,
+            ActorContext actorContext
+    ) {
+        return submit(
+                propertyId,
+                request,
+                null,
+                true,
+                actorContext
+        );
+    }
+
+    private PropertyVerificationResponse submit(
+            Long propertyId,
+            PropertyVerificationSubmitRequest request,
+            PropertyVerificationType expectedType,
+            boolean renewalRequired,
+            ActorContext actorContext
+    ) {
         Property property = findPropertyForVerificationChange(propertyId);
         propertyVersionPolicy.validate(property.getVersion(), request.version());
         Instant occurredAt = Instant.now();
         PropertyVerificationType type = verificationPolicy.validateSubmission(property, actorContext);
+        validateExpectedType(type, expectedType);
+        boolean renewal = verificationPolicy.isVerified(
+                property.getVerificationStatus()
+        );
+        if (renewalRequired && !renewal) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_REQUEST,
+                    "인증 완료 매물만 재인증을 신청할 수 있습니다."
+            );
+        }
         Optional<PropertyVerification> latestVerification =
                 verificationRepository
                         .findTopByPropertyIdAndVerificationTypeOrderByVerificationVersionDesc(
                                 propertyId,
                                 type
                         );
-        boolean renewal = verificationPolicy.isVerified(
-                property.getVerificationStatus()
-        );
         if (renewal) {
             verificationPolicy.validateRenewalWindow(
                     latestVerification.orElse(null),
@@ -144,6 +198,18 @@ public class PropertyVerificationService {
                 PropertyAuditActionCode.PROPERTY_VERIFICATION_REQUESTED, null, occurredAt, actorContext);
 
         return PropertyVerificationResponse.from(savedVerification, savedProperty);
+    }
+
+    private void validateExpectedType(
+            PropertyVerificationType actualType,
+            PropertyVerificationType expectedType
+    ) {
+        if (expectedType != null && actualType != expectedType) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_REQUEST,
+                    "매물 등록주체와 검증 신청 경로가 일치하지 않습니다."
+            );
+        }
     }
 
     @Transactional

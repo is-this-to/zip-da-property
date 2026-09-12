@@ -229,6 +229,63 @@ class PropertyVerificationServiceTest {
     }
 
     @Test
+    void submitForType_ownerPropertyThroughTenantPath_rejectsBeforeSaving() {
+        ActorContext owner = ActorContext.member(
+                OWNER_ID,
+                ActorRole.USER,
+                "verification-type-path-test"
+        );
+        Property property = prepareSubmittableProperty();
+        when(propertyRepository.findForVerificationChange(PROPERTY_ID))
+                .thenReturn(Optional.of(property));
+
+        assertThatThrownBy(() -> service.submitForType(
+                PROPERTY_ID,
+                PropertyVerificationType.TENANT,
+                createSubmitRequest(),
+                owner
+        ))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(exception -> assertThat(
+                        ((BusinessException) exception)
+                                .getCustomResponseCode()
+                ).isEqualTo(CustomResponseCode.INVALID_REQUEST));
+
+        verify(verificationRepository, never())
+                .saveAndFlush(any(PropertyVerification.class));
+        verify(propertyRepository, never())
+                .saveAndFlush(any(Property.class));
+    }
+
+    @Test
+    void resubmit_unverifiedProperty_rejectsBeforeSaving() {
+        ActorContext owner = ActorContext.member(
+                OWNER_ID,
+                ActorRole.USER,
+                "verification-renewal-path-test"
+        );
+        Property property = prepareSubmittableProperty();
+        when(propertyRepository.findForVerificationChange(PROPERTY_ID))
+                .thenReturn(Optional.of(property));
+
+        assertThatThrownBy(() -> service.resubmit(
+                PROPERTY_ID,
+                createSubmitRequest(),
+                owner
+        ))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(exception -> assertThat(
+                        ((BusinessException) exception)
+                                .getCustomResponseCode()
+                ).isEqualTo(CustomResponseCode.INVALID_REQUEST));
+
+        verify(verificationRepository, never())
+                .saveAndFlush(any(PropertyVerification.class));
+        verify(propertyRepository, never())
+                .saveAndFlush(any(Property.class));
+    }
+
+    @Test
     void review_approve_changesPropertyToOwnerVerifiedAndPublishesEvent() {
         ActorContext owner = ActorContext.member(OWNER_ID, ActorRole.USER, "verification-origin");
         ActorContext admin = ActorContext.member(ADMIN_ID, ActorRole.CS_ADMIN, "verification-review-test");
