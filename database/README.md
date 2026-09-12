@@ -21,6 +21,7 @@
 12. `012_add_property_verification_evidence_cleanup_indexes.sql`
 13. `013_add_property_verification_renewal_notification.sql`
 14. `014_add_property_idempotency_cleanup.sql`
+15. `015_create_property_risk_assessment_table.sql`
 
 ## 실행 전 확인
 
@@ -122,6 +123,21 @@
 - DDL 실행 전 백업하고 인덱스 변경 잠금 시간을 스테이징에서 확인합니다.
   문제가 발생하면 배치를 중지한 뒤 기존 UNIQUE 인덱스로 되돌리는
   forward fix를 적용합니다.
+
+## 등록 전 허위·중복 위험검사
+
+- 애플리케이션 배포 전에
+  `015_create_property_risk_assessment_table.sql`을 한 번 실행합니다.
+- 평가 이력은 매물 저장보다 먼저 별도 트랜잭션으로 기록하므로,
+  등록이 차단되거나 이후 저장이 실패한 시도도 남을 수 있습니다.
+- `normalized_address_hash`와 규칙 판정 정보는 내부 검수용이며
+  공개 DTO와 일반 로그에 포함하지 않습니다.
+- `property_id`는 등록 시도용으로 미리 생성한 TSID입니다.
+  차단된 시도에는 대응하는 `property` 행이 존재하지 않을 수 있으므로
+  물리 외래키를 추가하지 않습니다.
+- 이 변경은 신규 테이블 추가만 수행하므로 기존 애플리케이션과 호환됩니다.
+  문제가 발생하면 새 애플리케이션의 위험검사 호출을 중단하는 forward fix를
+  우선 적용하고, 평가 이력 보존 여부를 확인한 뒤 테이블 제거를 결정합니다.
 
 ## 외래키 정책
 

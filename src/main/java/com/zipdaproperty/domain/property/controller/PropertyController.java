@@ -76,6 +76,8 @@ public class PropertyController {
                     정확 위치와 지도 공개용 비식별 위치를 함께 저장합니다.
                     동일한 Idempotency-Key로 동일 요청을 반복하면
                     최초 요청의 응답을 재사용합니다.
+                    저장 전에 주소·가격·등록자·이미지 checksum과
+                    본문 위험 패턴을 검사합니다.
                     """
     )
     @CustomApiResponse({
@@ -88,6 +90,8 @@ public class PropertyController {
             CustomResponseCode.PROPERTY_REGION_BOUNDARY_NOT_FOUND,
             CustomResponseCode.PROPERTY_LOCATION_REGION_MISMATCH,
             CustomResponseCode.PROPERTY_PUBLIC_LOCATION_GENERATION_FAILED,
+            CustomResponseCode.PROPERTY_REGISTRATION_RISK_BLOCKED,
+            CustomResponseCode.PROPERTY_DUPLICATE_DETECTED,
             CustomResponseCode.IDEMPOTENCY_KEY_REQUIRED,
             CustomResponseCode.IDEMPOTENCY_CONFLICT,
             CustomResponseCode.IDEMPOTENCY_REQUEST_IN_PROGRESS,

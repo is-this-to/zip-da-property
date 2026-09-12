@@ -21,6 +21,8 @@ import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.repository.PropertyStatusHistoryRepository;
 import com.zipdaproperty.domain.property.response.PropertyCreateResponse;
+import com.zipdaproperty.domain.property.risk.model.PropertyRiskAssessmentResult;
+import com.zipdaproperty.domain.property.risk.service.PropertyRegistrationRiskService;
 import com.zipdaproperty.domain.region.repository.RegionRepository;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
@@ -75,7 +77,8 @@ public class PropertyCreateService {
             "description",
             "publicationStatus",
             "transactionStatus",
-            "verificationStatus"
+            "verificationStatus",
+            "riskScore"
     );
 
     private final PropertyRepository propertyRepository;
@@ -111,6 +114,9 @@ public class PropertyCreateService {
             memberWritePermissionService;
 
     private final PropertyOptionCommandService propertyOptionCommandService;
+
+    private final PropertyRegistrationRiskService
+            propertyRegistrationRiskService;
 
     @Transactional
     public PropertyCreateResponse create(
@@ -150,11 +156,23 @@ public class PropertyCreateService {
                 preparedAddress.regionId()
         );
 
+        PropertyRiskAssessmentResult riskAssessment =
+                propertyRegistrationRiskService.evaluateAndRecord(
+                        propertyId,
+                        command,
+                        preparedAddress,
+                        actorContext
+                );
+
+        rejectBlockedRegistration(riskAssessment);
+
         Property property = Property.create(
                 propertyId,
                 command,
                 actorContext
         );
+
+        property.assignInitialRiskScore(riskAssessment.score());
 
         Property savedProperty =
                 propertyRepository.saveAndFlush(property);
@@ -265,6 +283,24 @@ public class PropertyCreateService {
                     "요청자 역할과 등록 주체 유형이 일치하지 않습니다."
             );
         }
+    }
+
+    private void rejectBlockedRegistration(
+            PropertyRiskAssessmentResult riskAssessment
+    ) {
+        if (!riskAssessment.blocked()) {
+            return;
+        }
+
+        CustomResponseCode responseCode =
+                riskAssessment.exactDuplicateDetected()
+                        ? CustomResponseCode.PROPERTY_DUPLICATE_DETECTED
+                        : CustomResponseCode.PROPERTY_REGISTRATION_RISK_BLOCKED;
+
+        throw new BusinessException(
+                responseCode,
+                "등록 전 위험검사 결과 등록이 차단되었습니다."
+        );
     }
 
     private void validateRegion(Long regionId) {

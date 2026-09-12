@@ -255,6 +255,18 @@ public class Property extends BaseAuditEntity {
         );
     }
 
+    public void assignInitialRiskScore(BigDecimal riskScore) {
+        if (riskScore == null
+                || riskScore.compareTo(BigDecimal.ZERO) < 0
+                || riskScore.compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw new IllegalArgumentException(
+                    "위험점수는 0 이상 100 이하여야 합니다."
+            );
+        }
+
+        this.riskScore = riskScore;
+    }
+
     public void update(
             PropertyUpdateCommand command,
             ActorContext actorContext

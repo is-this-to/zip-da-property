@@ -23,6 +23,9 @@ import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.repository.PropertyStatusHistoryRepository;
 import com.zipdaproperty.domain.property.response.PropertyCreateResponse;
+import com.zipdaproperty.domain.property.risk.constant.PropertyRiskDecision;
+import com.zipdaproperty.domain.property.risk.model.PropertyRiskAssessmentResult;
+import com.zipdaproperty.domain.property.risk.service.PropertyRegistrationRiskService;
 import com.zipdaproperty.domain.region.entity.Region;
 import com.zipdaproperty.domain.region.repository.RegionRepository;
 import com.zipdaproperty.global.context.ActorContext;
@@ -145,6 +148,10 @@ class PropertyCreateServiceTest {
     private final MemberWritePermissionService
             memberWritePermissionService =
             mock(MemberWritePermissionService.class);
+
+    private final PropertyRegistrationRiskService
+            propertyRegistrationRiskService =
+            mock(PropertyRegistrationRiskService.class);
     private final ActorContext ownerContext =
             ActorContext.member(
                     AUTHOR_MEMBER_ID,
@@ -169,7 +176,8 @@ class PropertyCreateServiceTest {
                         propertyKafkaEventPublisher,
                         propertyAddressService,
                         memberWritePermissionService,
-                        propertyOptionCommandService
+                        propertyOptionCommandService,
+                        propertyRegistrationRiskService
                 );
 
         TransactionInterceptor interceptor =
@@ -193,6 +201,20 @@ class PropertyCreateServiceTest {
 
         when(transactionManager.getTransaction(any()))
                 .thenReturn(transactionStatus);
+
+        when(propertyRegistrationRiskService.evaluateAndRecord(
+                any(),
+                any(),
+                any(),
+                any()
+        )).thenReturn(
+                new PropertyRiskAssessmentResult(
+                        BigDecimal.ZERO,
+                        PropertyRiskDecision.PASS,
+                        List.of(),
+                        null
+                )
+        );
     }
 
     @Test
@@ -628,6 +650,86 @@ class PropertyCreateServiceTest {
 
         verify(transactionManager, never())
                 .commit(any());
+    }
+
+    @Test
+    void create_blockedByRiskAssessment_doesNotPersistProperty() {
+        PropertyCreateCommand command = createValidCommand();
+        PreparedPropertyAddress preparedAddress =
+                stubValidCreatePersistence();
+
+        when(propertyRegistrationRiskService.evaluateAndRecord(
+                PROPERTY_ID,
+                command,
+                preparedAddress,
+                ownerContext
+        )).thenReturn(
+                new PropertyRiskAssessmentResult(
+                        BigDecimal.valueOf(90),
+                        PropertyRiskDecision.BLOCKED,
+                        List.of(),
+                        null
+                )
+        );
+
+        assertThatThrownBy(() -> propertyCreateService.create(
+                command,
+                ownerContext
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("customResponseCode")
+                .isEqualTo(
+                        CustomResponseCode
+                                .PROPERTY_REGISTRATION_RISK_BLOCKED
+                );
+
+        verify(propertyRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(
+                propertyImageLinkService,
+                propertyRevisionRepository,
+                propertyOptionCommandService,
+                propertyStatusHistoryRepository,
+                propertyPublisherSnapshotRepository,
+                propertyAuditEventRecorder,
+                propertyKafkaEventPublisher
+        );
+    }
+
+    @Test
+    void create_exactDuplicate_usesDuplicateResponseCode() {
+        PropertyCreateCommand command = createValidCommand();
+        PreparedPropertyAddress preparedAddress =
+                stubValidCreatePersistence();
+
+        when(propertyRegistrationRiskService.evaluateAndRecord(
+                PROPERTY_ID,
+                command,
+                preparedAddress,
+                ownerContext
+        )).thenReturn(
+                new PropertyRiskAssessmentResult(
+                        BigDecimal.valueOf(100),
+                        PropertyRiskDecision.BLOCKED,
+                        List.of(
+                                com.zipdaproperty.domain.property.risk
+                                        .constant.PropertyRiskRuleCode
+                                        .SAME_ADDRESS_IMAGE
+                        ),
+                        200L
+                )
+        );
+
+        assertThatThrownBy(() -> propertyCreateService.create(
+                command,
+                ownerContext
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("customResponseCode")
+                .isEqualTo(
+                        CustomResponseCode.PROPERTY_DUPLICATE_DETECTED
+                );
+
+        verify(propertyRepository, never()).saveAndFlush(any());
     }
 
     private PreparedPropertyAddress stubValidCreatePersistence() {
