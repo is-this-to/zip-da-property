@@ -95,6 +95,16 @@ public enum CustomResponseCode {
             "P29"
     ),
 
+    // 매물 등록 전 위험검사 관련
+    PROPERTY_REGISTRATION_RISK_BLOCKED(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "P30"
+    ),
+    PROPERTY_DUPLICATE_DETECTED(
+            HttpStatus.CONFLICT,
+            "P31"
+    ),
+
     // 매물 소유·중개 검증 관련
     PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS(
             HttpStatus.CONFLICT,
