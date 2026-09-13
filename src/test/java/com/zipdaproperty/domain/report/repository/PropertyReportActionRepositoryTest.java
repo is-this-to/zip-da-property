@@ -17,6 +17,9 @@ class PropertyReportActionRepositoryTest {
 
         assertThat(Arrays.stream(PropertyReportActionRepository.class.getMethods())
                 .map(Method::getName))
-                .containsExactly("save");
+                .containsExactlyInAnyOrder(
+                        "save",
+                        "findFirstByReportIdAndActionCodeInOrderByExecutedAtDescActionIdDesc"
+                );
     }
 }

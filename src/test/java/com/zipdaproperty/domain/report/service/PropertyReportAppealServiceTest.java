@@ -3,11 +3,14 @@ package com.zipdaproperty.domain.report.service;
 import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.report.entity.PropertyReport;
+import com.zipdaproperty.domain.report.entity.PropertyReportAction;
 import com.zipdaproperty.domain.report.entity.PropertyReportAppeal;
+import com.zipdaproperty.domain.report.repository.PropertyReportActionRepository;
 import com.zipdaproperty.domain.report.repository.PropertyReportAppealRepository;
 import com.zipdaproperty.domain.report.repository.PropertyReportRepository;
 import com.zipdaproperty.domain.report.response.PropertyReportAppealCreateResponse;
 import com.zipdaproperty.domain.report.type.AppealStatus;
+import com.zipdaproperty.domain.report.type.ReportActionCode;
 import com.zipdaproperty.domain.report.type.ReportStatus;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
@@ -17,7 +20,11 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,6 +41,7 @@ class PropertyReportAppealServiceTest {
     private static final Long REPORT_ID = 884685586571263701L;
     private static final Long PROPERTY_ID = 884700000000000001L;
     private static final Long AUTHOR_MEMBER_ID = 2001L;
+    private static final Long ACTION_ADMIN_ID = 3001L;
     private static final String DETAIL = "운영조치에 이의를 신청하는 상세 사유입니다.";
 
     private final PropertyReportRepository reportRepository =
@@ -42,11 +50,14 @@ class PropertyReportAppealServiceTest {
             mock(PropertyRepository.class);
     private final PropertyReportAppealRepository appealRepository =
             mock(PropertyReportAppealRepository.class);
+    private final PropertyReportActionRepository actionRepository =
+            mock(PropertyReportActionRepository.class);
     private final PropertyReportAppealService service =
             new PropertyReportAppealService(
                     reportRepository,
                     propertyRepository,
-                    appealRepository
+                    appealRepository,
+                    actionRepository
             );
 
     @ParameterizedTest
@@ -57,7 +68,8 @@ class PropertyReportAppealServiceTest {
         ActorContext actorContext = actor(AUTHOR_MEMBER_ID, role);
         PropertyReport report = prepareReport();
         prepareProperty(AUTHOR_MEMBER_ID);
-        when(appealRepository.save(any(PropertyReportAppeal.class)))
+        prepareAllowedAction(Instant.now().minus(6, ChronoUnit.DAYS));
+        when(appealRepository.saveAndFlush(any(PropertyReportAppeal.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         PropertyReportAppealCreateResponse response = service.createAppeal(
@@ -68,7 +80,7 @@ class PropertyReportAppealServiceTest {
 
         ArgumentCaptor<PropertyReportAppeal> captor =
                 ArgumentCaptor.forClass(PropertyReportAppeal.class);
-        verify(appealRepository).save(captor.capture());
+        verify(appealRepository).saveAndFlush(captor.capture());
         PropertyReportAppeal appeal = captor.getValue();
         assertThat(appeal.getReportId()).isEqualTo(REPORT_ID);
         assertThat(appeal.getAppellantMemberId()).isEqualTo(AUTHOR_MEMBER_ID);
@@ -135,6 +147,90 @@ class PropertyReportAppealServiceTest {
         verifyNoInteractions(appealRepository);
     }
 
+    @Test
+    void createAppeal_withoutAllowedAction_throwsAppealNotAllowed() {
+        prepareReport();
+        prepareProperty(AUTHOR_MEMBER_ID);
+        when(actionRepository
+                .findFirstByReportIdAndActionCodeInOrderByExecutedAtDescActionIdDesc(
+                        REPORT_ID,
+                        allowedActionCodes()
+                )).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.createAppeal(
+                REPORT_ID,
+                DETAIL,
+                actor(AUTHOR_MEMBER_ID, ActorRole.USER)
+        )).isInstanceOfSatisfying(
+                BusinessException.class,
+                exception -> assertThat(exception.getCustomResponseCode())
+                        .isEqualTo(CustomResponseCode.APPEAL_NOT_ALLOWED)
+        );
+
+        verifyNoInteractions(appealRepository);
+    }
+
+    @Test
+    void createAppeal_latestAllowedActionOlderThanSevenDays_throwsExpired() {
+        prepareReport();
+        prepareProperty(AUTHOR_MEMBER_ID);
+        prepareAllowedAction(Instant.now().minus(8, ChronoUnit.DAYS));
+
+        assertThatThrownBy(() -> service.createAppeal(
+                REPORT_ID,
+                DETAIL,
+                actor(AUTHOR_MEMBER_ID, ActorRole.USER)
+        )).isInstanceOfSatisfying(
+                BusinessException.class,
+                exception -> assertThat(exception.getCustomResponseCode())
+                        .isEqualTo(CustomResponseCode.APPEAL_PERIOD_EXPIRED)
+        );
+
+        verifyNoInteractions(appealRepository);
+    }
+
+    @Test
+    void createAppeal_existingAppeal_throwsDuplicateAppeal() {
+        prepareReport();
+        prepareProperty(AUTHOR_MEMBER_ID);
+        prepareAllowedAction(Instant.now().minus(1, ChronoUnit.DAYS));
+        when(appealRepository.existsByReportId(REPORT_ID)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.createAppeal(
+                REPORT_ID,
+                DETAIL,
+                actor(AUTHOR_MEMBER_ID, ActorRole.USER)
+        )).isInstanceOfSatisfying(
+                BusinessException.class,
+                exception -> assertThat(exception.getCustomResponseCode())
+                        .isEqualTo(CustomResponseCode.DUPLICATE_APPEAL)
+        );
+
+        verify(appealRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createAppeal_uniqueConflict_throwsDuplicateAppeal() {
+        prepareReport();
+        prepareProperty(AUTHOR_MEMBER_ID);
+        prepareAllowedAction(Instant.now().minus(1, ChronoUnit.DAYS));
+        when(appealRepository.existsByReportId(REPORT_ID)).thenReturn(false);
+        when(appealRepository.saveAndFlush(any(PropertyReportAppeal.class)))
+                .thenThrow(new DataIntegrityViolationException(
+                        "Duplicate entry for key uq_property_report_appeal_report"
+                ));
+
+        assertThatThrownBy(() -> service.createAppeal(
+                REPORT_ID,
+                DETAIL,
+                actor(AUTHOR_MEMBER_ID, ActorRole.USER)
+        )).isInstanceOfSatisfying(
+                BusinessException.class,
+                exception -> assertThat(exception.getCustomResponseCode())
+                        .isEqualTo(CustomResponseCode.DUPLICATE_APPEAL)
+        );
+    }
+
     private PropertyReport prepareReport() {
         PropertyReport report = mock(PropertyReport.class);
         when(report.getReportId()).thenReturn(REPORT_ID);
@@ -151,6 +247,29 @@ class PropertyReportAppealServiceTest {
         when(property.getAuthorMemberId()).thenReturn(authorMemberId);
         when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(PROPERTY_ID))
                 .thenReturn(Optional.of(property));
+    }
+
+    private void prepareAllowedAction(Instant executedAt) {
+        PropertyReportAction action = PropertyReportAction.create(
+                REPORT_ID,
+                PROPERTY_ID,
+                ReportActionCode.HIDE_PROPERTY,
+                "운영조치 사유",
+                executedAt,
+                actor(ACTION_ADMIN_ID, ActorRole.CS_ADMIN)
+        );
+        when(actionRepository
+                .findFirstByReportIdAndActionCodeInOrderByExecutedAtDescActionIdDesc(
+                        REPORT_ID,
+                        allowedActionCodes()
+                )).thenReturn(Optional.of(action));
+    }
+
+    private List<ReportActionCode> allowedActionCodes() {
+        return List.of(
+                ReportActionCode.HIDE_PROPERTY,
+                ReportActionCode.REQUEST_CORRECTION
+        );
     }
 
     private ActorContext actor(Long memberId, ActorRole role) {

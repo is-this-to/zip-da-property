@@ -33,6 +33,9 @@ CREATE TABLE `property_report_appeal`
 
     PRIMARY KEY (`appeal_id`),
 
+    CONSTRAINT `uq_property_report_appeal_report`
+        UNIQUE (`report_id`),
+
     CONSTRAINT `chk_property_report_appeal_status`
         CHECK (`status` IN (
                             'SUBMITTED',

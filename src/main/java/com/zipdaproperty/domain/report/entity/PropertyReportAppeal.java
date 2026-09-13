@@ -12,6 +12,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -24,6 +25,10 @@ import java.util.Objects;
 @Entity
 @Table(
         name = "property_report_appeal",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uq_property_report_appeal_report",
+                columnNames = "report_id"
+        ),
         indexes = @Index(
                 name = "idx_property_report_appeal_report_status",
                 columnList = "report_id, status"
@@ -100,5 +105,42 @@ public class PropertyReportAppeal extends BaseAuditEntity {
                 detail,
                 actorContext
         );
+    }
+
+    public void startReview(ActorContext actorContext) {
+        ActorContext requiredActorContext = Objects.requireNonNull(
+                actorContext,
+                "재검토에는 ActorContext가 필요합니다."
+        );
+        this.status = AppealStatus.IN_REVIEW;
+        this.reviewerMemberId = requiredActorContext.memberId();
+        recordUpdate(requiredActorContext);
+    }
+
+    public void completeReview(
+            AppealStatus targetStatus,
+            String reviewReason,
+            Instant reviewedAt,
+            ActorContext actorContext
+    ) {
+        ActorContext requiredActorContext = Objects.requireNonNull(
+                actorContext,
+                "재검토에는 ActorContext가 필요합니다."
+        );
+        if (reviewReason == null || reviewReason.isBlank()) {
+            throw new IllegalArgumentException("최종 처리 사유는 필수입니다.");
+        }
+
+        this.status = Objects.requireNonNull(
+                targetStatus,
+                "최종 상태는 필수입니다."
+        );
+        this.reviewerMemberId = requiredActorContext.memberId();
+        this.reviewReason = reviewReason;
+        this.reviewedAt = Objects.requireNonNull(
+                reviewedAt,
+                "최종 처리 시각은 필수입니다."
+        );
+        recordUpdate(requiredActorContext);
     }
 }

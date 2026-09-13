@@ -122,6 +122,20 @@ public enum CustomResponseCode {
             HttpStatus.CONFLICT,
             "P35"
     ),
+    // 이의신청 관련
+    DUPLICATE_APPEAL(
+        HttpStatus.CONFLICT,
+        "P36"
+    ),
+    APPEAL_NOT_ALLOWED(
+        HttpStatus.CONFLICT,
+        "P37"
+    ),
+    APPEAL_PERIOD_EXPIRED(
+        HttpStatus.GONE,
+        "P38"
+    ),
+
 
     // 매물 소유·중개 검증 관련
     PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS(

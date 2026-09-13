@@ -38,6 +38,9 @@ public class PropertyReportAppealController {
             CustomResponseCode.NOT_FOUND_RESOURCE,
             CustomResponseCode.PROPERTY_NOT_FOUND,
             CustomResponseCode.PROPERTY_OWNERSHIP_REQUIRED,
+            CustomResponseCode.DUPLICATE_APPEAL,
+            CustomResponseCode.APPEAL_NOT_ALLOWED,
+            CustomResponseCode.APPEAL_PERIOD_EXPIRED,
             CustomResponseCode.METHOD_NOT_ALLOWED,
             CustomResponseCode.DB_ERROR,
             CustomResponseCode.SYSTEM_ERROR
