@@ -2,6 +2,7 @@ package com.zipdaproperty.domain.property.service;
 
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
+import com.zipdaproperty.domain.property.command.PropertyPublicationStatusChangeCommand;
 import com.zipdaproperty.domain.property.constant.PropertyStatusType;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.constant.TransactionStatus;
@@ -186,6 +187,165 @@ class PropertyPublicationStatusChangeServiceTest {
     }
 
     @Test
+    void change_internalCommandHidesPublishedProperty_withoutRequestVersion() {
+        Property property = prepareSuccessfulChange(
+                PublicationStatus.PUBLISHED,
+                PublicationStatus.HIDDEN,
+                TransactionStatus.RESERVED
+        );
+
+        PropertyPublicationStatusChangeResponse response =
+                service.change(
+                        new PropertyPublicationStatusChangeCommand(
+                                PROPERTY_ID,
+                                PublicationStatus.HIDDEN,
+                                REASON
+                        ),
+                        adminContext
+                );
+
+        assertThat(response.propertyId()).isEqualTo(PROPERTY_ID);
+        assertThat(response.version()).isEqualTo(NEXT_VERSION);
+        assertThat(response.publicationStatus())
+                .isEqualTo(PublicationStatus.HIDDEN);
+
+        verify(property).changePublicationStatus(
+                eq(PublicationStatus.HIDDEN),
+                eq(adminContext),
+                any()
+        );
+
+        ArgumentCaptor<PropertyRevision> revisionCaptor =
+                ArgumentCaptor.forClass(PropertyRevision.class);
+        verify(propertyRevisionRepository)
+                .saveAndFlush(revisionCaptor.capture());
+        assertThat(revisionCaptor.getValue().getChangeReason())
+                .isEqualTo(REASON);
+
+        ArgumentCaptor<PropertyStatusHistory> historyCaptor =
+                ArgumentCaptor.forClass(PropertyStatusHistory.class);
+        verify(propertyStatusHistoryRepository)
+                .save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getBeforeStatus())
+                .isEqualTo(PublicationStatus.PUBLISHED.name());
+        assertThat(historyCaptor.getValue().getAfterStatus())
+                .isEqualTo(PublicationStatus.HIDDEN.name());
+        assertThat(historyCaptor.getValue().getReason())
+                .isEqualTo(REASON);
+
+        verify(propertyAuditEventRecorder).recordPropertyAction(
+                eq(PROPERTY_ID),
+                eq(PropertyAuditActionCode.PROPERTY_PUBLICATION_STATUS_CHANGED),
+                eq(REASON),
+                eq(null),
+                any(),
+                eq(adminContext)
+        );
+        verify(propertyKafkaEventPublisher).publishAfterCommit(
+                eq(PROPERTY_ID),
+                eq(NEXT_VERSION),
+                eq(PropertyEventType.PROPERTY_HIDDEN),
+                any(),
+                any(),
+                eq(adminContext)
+        );
+    }
+
+    @Test
+    void change_internalCommandRestoresAvailableHiddenPropertyToPublished() {
+        prepareSuccessfulChange(
+                PublicationStatus.HIDDEN,
+                PublicationStatus.PUBLISHED,
+                TransactionStatus.AVAILABLE
+        );
+
+        PropertyPublicationStatusChangeResponse response =
+                service.change(
+                        new PropertyPublicationStatusChangeCommand(
+                                PROPERTY_ID,
+                                PublicationStatus.PUBLISHED,
+                                REASON
+                        ),
+                        adminContext
+                );
+
+        assertThat(response.publicationStatus())
+                .isEqualTo(PublicationStatus.PUBLISHED);
+        verify(propertyKafkaEventPublisher).publishAfterCommit(
+                eq(PROPERTY_ID),
+                eq(NEXT_VERSION),
+                eq(PropertyEventType.PROPERTY_PUBLISHED),
+                any(),
+                any(),
+                eq(adminContext)
+        );
+    }
+
+    @Test
+    void change_internalCommandCannotRestoreReservedHiddenProperty() {
+        Property property = prepareProperty(
+                PublicationStatus.HIDDEN,
+                TransactionStatus.RESERVED
+        );
+
+        assertThatThrownBy(
+                () -> service.change(
+                        new PropertyPublicationStatusChangeCommand(
+                                PROPERTY_ID,
+                                PublicationStatus.PUBLISHED,
+                                REASON
+                        ),
+                        adminContext
+                )
+        ).isInstanceOfSatisfying(
+                BusinessException.class,
+                exception -> assertThat(
+                        exception.getCustomResponseCode()
+                ).isEqualTo(
+                        CustomResponseCode.INVALID_STATUS_TRANSITION
+                )
+        );
+
+        verify(property, never()).changePublicationStatus(
+                any(),
+                any(),
+                any()
+        );
+        verifyNoPersistenceOrEvents();
+    }
+
+    @Test
+    void change_internalCommandKeepsPublicationPermissionValidation() {
+        Property property = prepareProperty(
+                PublicationStatus.PUBLISHED,
+                TransactionStatus.AVAILABLE
+        );
+        ActorContext otherOwnerContext = ActorContext.member(
+                OTHER_ID,
+                ActorRole.USER,
+                "publication-other-owner"
+        );
+
+        assertPermissionDenied(
+                () -> service.change(
+                        new PropertyPublicationStatusChangeCommand(
+                                PROPERTY_ID,
+                                PublicationStatus.HIDDEN,
+                                REASON
+                        ),
+                        otherOwnerContext
+                )
+        );
+
+        verify(property, never()).changePublicationStatus(
+                any(),
+                any(),
+                any()
+        );
+        verifyNoPersistenceOrEvents();
+    }
+
+    @Test
     void change_ownerResubmitsRejectedProperty_succeeds() {
         prepareSuccessfulChange(
                 PublicationStatus.REJECTED,
@@ -356,6 +516,46 @@ class PropertyPublicationStatusChangeServiceTest {
         verify(property).changePublicationStatus(
                 eq(PublicationStatus.HIDDEN),
                 eq(ownerContext),
+                any()
+        );
+        verifyNoHistoryOrEvents();
+    }
+
+    @Test
+    void change_internalCommandOptimisticLockFailure_recordsNoHistoryOrEvents() {
+        Property property = prepareProperty(
+                PublicationStatus.PUBLISHED,
+                TransactionStatus.AVAILABLE
+        );
+
+        when(objectMapper.writeValueAsString(property))
+                .thenReturn("{\"publicationStatus\":\"PUBLISHED\"}");
+        when(propertyRepository.saveAndFlush(property))
+                .thenThrow(
+                        new OptimisticLockingFailureException(
+                                "내부 공개 상태 동시 변경 충돌"
+                        )
+                );
+
+        assertThatThrownBy(
+                () -> service.change(
+                        new PropertyPublicationStatusChangeCommand(
+                                PROPERTY_ID,
+                                PublicationStatus.HIDDEN,
+                                REASON
+                        ),
+                        adminContext
+                )
+        ).isInstanceOfSatisfying(
+                BusinessException.class,
+                exception -> assertThat(
+                        exception.getCustomResponseCode()
+                ).isEqualTo(CustomResponseCode.VERSION_CONFLICT)
+        );
+
+        verify(property).changePublicationStatus(
+                eq(PublicationStatus.HIDDEN),
+                eq(adminContext),
                 any()
         );
         verifyNoHistoryOrEvents();
