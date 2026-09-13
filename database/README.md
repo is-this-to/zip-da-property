@@ -22,6 +22,7 @@
 13. `013_add_property_verification_renewal_notification.sql`
 14. `014_add_property_idempotency_cleanup.sql`
 15. `015_create_property_risk_assessment_table.sql`
+16. `016_create_property_report_action_table.sql`
 
 ## 실행 전 확인
 
