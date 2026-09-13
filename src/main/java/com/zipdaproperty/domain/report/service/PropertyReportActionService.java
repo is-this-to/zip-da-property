@@ -2,7 +2,10 @@ package com.zipdaproperty.domain.report.service;
 
 import com.zipdaproperty.domain.property.command.PropertyPublicationStatusChangeCommand;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
+import com.zipdaproperty.domain.property.entity.Property;
+import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.service.PropertyPublicationStatusChangeService;
+import com.zipdaproperty.domain.report.client.MemberSanctionClient;
 import com.zipdaproperty.domain.report.entity.PropertyReport;
 import com.zipdaproperty.domain.report.entity.PropertyReportAction;
 import com.zipdaproperty.domain.report.repository.PropertyReportActionRepository;
@@ -15,6 +18,7 @@ import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +33,9 @@ public class PropertyReportActionService {
             propertyReportActionRepository;
     private final PropertyPublicationStatusChangeService
             propertyPublicationStatusChangeService;
+    private final PropertyRepository propertyRepository;
+    private final ObjectProvider<MemberSanctionClient>
+            memberSanctionClientProvider;
 
     @Transactional
     public PropertyReportActionResponse executeAction(
@@ -42,14 +49,14 @@ public class PropertyReportActionService {
                 .findByReportIdAndDeletedAtIsNull(reportId)
                 .orElseThrow(this::reportNotFound);
 
-        Instant executedAt = Instant.now();
-
         executePropertyAction(
                 report.getPropertyId(),
                 request.actionCode(),
                 request.reason(),
                 actorContext
         );
+
+        Instant executedAt = Instant.now();
 
         PropertyReportAction action = PropertyReportAction.create(
                 reportId,
@@ -88,8 +95,30 @@ public class PropertyReportActionService {
             case REQUEST_CORRECTION -> {
                 // Property 상태를 변경하지 않고 조치 이력만 기록한다.
             }
-            case REQUEST_MEMBER_SANCTION -> throw unsupportedAction();
+            case REQUEST_MEMBER_SANCTION -> requestMemberSanction(
+                    propertyId,
+                    reason
+            );
         }
+    }
+
+    private void requestMemberSanction(
+            Long propertyId,
+            String reason
+    ) {
+        Property property = propertyRepository.findById(propertyId)
+                .orElseThrow(this::propertyNotFound);
+
+        MemberSanctionClient memberSanctionClient =
+                memberSanctionClientProvider.getIfAvailable();
+        if (memberSanctionClient == null) {
+            throw memberApiUnavailable();
+        }
+
+        memberSanctionClient.requestSanction(
+                property.getAuthorMemberId(),
+                reason
+        );
     }
 
     private void changePublicationStatus(
@@ -134,10 +163,17 @@ public class PropertyReportActionService {
         );
     }
 
-    private BusinessException unsupportedAction() {
+    private BusinessException propertyNotFound() {
         return new BusinessException(
-                CustomResponseCode.INVALID_REQUEST,
-                "이번 단계에서 지원하지 않는 신고 운영조치입니다."
+                CustomResponseCode.PROPERTY_NOT_FOUND,
+                "제재 대상을 확인할 매물이 없습니다."
+        );
+    }
+
+    private BusinessException memberApiUnavailable() {
+        return new BusinessException(
+                CustomResponseCode.MEMBER_API_UNAVAILABLE,
+                "Member 제재 연동을 사용할 수 없습니다."
         );
     }
 }

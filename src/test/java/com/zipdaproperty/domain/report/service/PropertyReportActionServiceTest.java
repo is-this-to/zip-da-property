@@ -2,7 +2,10 @@ package com.zipdaproperty.domain.report.service;
 
 import com.zipdaproperty.domain.property.command.PropertyPublicationStatusChangeCommand;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
+import com.zipdaproperty.domain.property.entity.Property;
+import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.service.PropertyPublicationStatusChangeService;
+import com.zipdaproperty.domain.report.client.MemberSanctionClient;
 import com.zipdaproperty.domain.report.entity.PropertyReport;
 import com.zipdaproperty.domain.report.entity.PropertyReportAction;
 import com.zipdaproperty.domain.report.repository.PropertyReportActionRepository;
@@ -18,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
@@ -36,6 +40,7 @@ class PropertyReportActionServiceTest {
     private static final Long ACTION_ID = 501L;
     private static final Long REPORT_ID = 884685586571263701L;
     private static final Long PROPERTY_ID = 884700000000000001L;
+    private static final Long AUTHOR_MEMBER_ID = 2001L;
     private static final String REASON = "신고 검토에 따른 운영조치";
 
     private final PropertyReportRepository propertyReportRepository =
@@ -45,12 +50,22 @@ class PropertyReportActionServiceTest {
     private final PropertyPublicationStatusChangeService
             publicationStatusChangeService =
             mock(PropertyPublicationStatusChangeService.class);
+    private final PropertyRepository propertyRepository =
+            mock(PropertyRepository.class);
+    private final MemberSanctionClient memberSanctionClient =
+            mock(MemberSanctionClient.class);
+    @SuppressWarnings("unchecked")
+    private final ObjectProvider<MemberSanctionClient>
+            memberSanctionClientProvider =
+            mock(ObjectProvider.class);
 
     private final PropertyReportActionService service =
             new PropertyReportActionService(
                     propertyReportRepository,
                     actionRepository,
-                    publicationStatusChangeService
+                    publicationStatusChangeService,
+                    propertyRepository,
+                    memberSanctionClientProvider
             );
 
     private final ActorContext adminContext = ActorContext.member(
@@ -78,6 +93,11 @@ class PropertyReportActionServiceTest {
                 ),
                 adminContext
         );
+        verifyNoInteractions(
+                propertyRepository,
+                memberSanctionClientProvider,
+                memberSanctionClient
+        );
         assertSavedAction(ReportActionCode.HIDE_PROPERTY);
         assertResponse(response, ReportActionCode.HIDE_PROPERTY);
         verify(report, never()).changeStatus(any(), any());
@@ -103,6 +123,11 @@ class PropertyReportActionServiceTest {
                 ),
                 adminContext
         );
+        verifyNoInteractions(
+                propertyRepository,
+                memberSanctionClientProvider,
+                memberSanctionClient
+        );
         assertSavedAction(ReportActionCode.RESTORE_PROPERTY);
         assertResponse(response, ReportActionCode.RESTORE_PROPERTY);
         verify(report, never()).changeStatus(any(), any());
@@ -121,6 +146,11 @@ class PropertyReportActionServiceTest {
         );
 
         verifyNoInteractions(publicationStatusChangeService);
+        verifyNoInteractions(
+                propertyRepository,
+                memberSanctionClientProvider,
+                memberSanctionClient
+        );
         assertSavedAction(ReportActionCode.REQUEST_CORRECTION);
         assertResponse(response, ReportActionCode.REQUEST_CORRECTION);
         verify(report, never()).changeStatus(any(), any());
@@ -147,6 +177,11 @@ class PropertyReportActionServiceTest {
                 .isEqualTo(ReportActionCode.REQUEST_CORRECTION);
         verify(actionRepository).save(any(PropertyReportAction.class));
         verifyNoInteractions(publicationStatusChangeService);
+        verifyNoInteractions(
+                propertyRepository,
+                memberSanctionClientProvider,
+                memberSanctionClient
+        );
     }
 
     @ParameterizedTest
@@ -219,8 +254,58 @@ class PropertyReportActionServiceTest {
     }
 
     @Test
-    void executeAction_memberSanctionIsOutOfScope_doesNotSaveAction() {
+    void executeAction_memberSanction_callsClientWithAuthorAndAppendsAction() {
         prepareReport();
+        prepareProperty();
+        when(memberSanctionClientProvider.getIfAvailable())
+                .thenReturn(memberSanctionClient);
+        prepareActionSave();
+
+        PropertyReportActionResponse response = service.executeAction(
+                REPORT_ID,
+                request(ReportActionCode.REQUEST_MEMBER_SANCTION),
+                adminContext
+        );
+
+        verify(propertyRepository).findById(PROPERTY_ID);
+        verify(memberSanctionClient).requestSanction(
+                AUTHOR_MEMBER_ID,
+                REASON
+        );
+        assertSavedAction(ReportActionCode.REQUEST_MEMBER_SANCTION);
+        assertResponse(response, ReportActionCode.REQUEST_MEMBER_SANCTION);
+        verifyNoInteractions(publicationStatusChangeService);
+    }
+
+    @Test
+    void executeAction_memberSanctionClientFails_doesNotSaveAction() {
+        prepareReport();
+        prepareProperty();
+        when(memberSanctionClientProvider.getIfAvailable())
+                .thenReturn(memberSanctionClient);
+        BusinessException clientFailure = new BusinessException(
+                CustomResponseCode.MEMBER_API_UNAVAILABLE,
+                "Member 제재 요청 실패"
+        );
+        org.mockito.Mockito.doThrow(clientFailure)
+                .when(memberSanctionClient)
+                .requestSanction(AUTHOR_MEMBER_ID, REASON);
+
+        assertThatThrownBy(() -> service.executeAction(
+                REPORT_ID,
+                request(ReportActionCode.REQUEST_MEMBER_SANCTION),
+                adminContext
+        )).isSameAs(clientFailure);
+
+        verify(propertyRepository).findById(PROPERTY_ID);
+        verifyNoInteractions(actionRepository, publicationStatusChangeService);
+    }
+
+    @Test
+    void executeAction_memberSanctionPropertyMissing_doesNotCallClientOrSaveAction() {
+        prepareReport();
+        when(propertyRepository.findById(PROPERTY_ID))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.executeAction(
                 REPORT_ID,
@@ -229,7 +314,33 @@ class PropertyReportActionServiceTest {
         )).isInstanceOfSatisfying(
                 BusinessException.class,
                 exception -> assertThat(exception.getCustomResponseCode())
-                        .isEqualTo(CustomResponseCode.INVALID_REQUEST)
+                        .isEqualTo(CustomResponseCode.PROPERTY_NOT_FOUND)
+        );
+
+        verify(propertyRepository).findById(PROPERTY_ID);
+        verifyNoInteractions(
+                memberSanctionClientProvider,
+                memberSanctionClient,
+                actionRepository,
+                publicationStatusChangeService
+        );
+    }
+
+    @Test
+    void executeAction_memberSanctionClientIsNotConfigured_doesNotSaveAction() {
+        prepareReport();
+        prepareProperty();
+        when(memberSanctionClientProvider.getIfAvailable())
+                .thenReturn(null);
+
+        assertThatThrownBy(() -> service.executeAction(
+                REPORT_ID,
+                request(ReportActionCode.REQUEST_MEMBER_SANCTION),
+                adminContext
+        )).isInstanceOfSatisfying(
+                BusinessException.class,
+                exception -> assertThat(exception.getCustomResponseCode())
+                        .isEqualTo(CustomResponseCode.MEMBER_API_UNAVAILABLE)
         );
 
         verifyNoInteractions(actionRepository, publicationStatusChangeService);
@@ -250,6 +361,14 @@ class PropertyReportActionServiceTest {
                     ReflectionTestUtils.setField(action, "actionId", ACTION_ID);
                     return action;
                 });
+    }
+
+    private Property prepareProperty() {
+        Property property = mock(Property.class);
+        when(property.getAuthorMemberId()).thenReturn(AUTHOR_MEMBER_ID);
+        when(propertyRepository.findById(PROPERTY_ID))
+                .thenReturn(Optional.of(property));
+        return property;
     }
 
     private PropertyReportActionRequest request(ReportActionCode actionCode) {
