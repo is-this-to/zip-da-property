@@ -6,6 +6,7 @@ import com.querydsl.jpa.impl.JPAQueryFactory;
 import com.zipdaproperty.domain.favorite.entity.QPropertyFavorite;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.constant.TransactionStatus;
+import com.zipdaproperty.domain.property.constant.VerificationStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -73,6 +74,11 @@ public class PropertyFavoriteListQueryRepository {
                         property.transactionStatus.in(
                                 TransactionStatus.AVAILABLE,
                                 TransactionStatus.RESERVED
+                        ),
+                        property.verificationStatus.in(
+                                VerificationStatus.OWNER_VERIFIED,
+                                VerificationStatus.TENANT_VERIFIED,
+                                VerificationStatus.AGENT_VERIFIED
                         )
                 )
                 .orderBy(

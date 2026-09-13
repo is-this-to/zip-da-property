@@ -2,15 +2,17 @@ package com.zipdaproperty.domain.option.service;
 
 import com.zipdaproperty.domain.option.command.PropertyOptionCreateCommand;
 import com.zipdaproperty.domain.option.entity.PropertyOption;
-import com.zipdaproperty.domain.option.entity.PropertyOptionHistory;
 import com.zipdaproperty.domain.option.entity.PropertyOptionCode;
+import com.zipdaproperty.domain.option.entity.PropertyOptionHistory;
 import com.zipdaproperty.domain.option.entity.PropertyTypeOption;
 import com.zipdaproperty.domain.option.repository.PropertyOptionHistoryRepository;
 import com.zipdaproperty.domain.option.repository.PropertyOptionQueryDSLRepository;
 import com.zipdaproperty.domain.option.repository.PropertyOptionRepository;
+import com.zipdaproperty.domain.option.type.OptionChangeType;
 import com.zipdaproperty.domain.option.validator.OptionValueValidator;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.global.context.ActorContext;
+import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.error.custom.business.OptionCodeNotFoundException;
 import com.zipdaproperty.global.error.custom.business.OptionNotAllowedForPropertyTypeException;
@@ -19,558 +21,823 @@ import com.zipdaproperty.global.error.custom.business.OptionValueRequiredExcepti
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class PropertyOptionCommandServiceTest {
 
-    private final PropertyOptionRepository optionRepository = mock(PropertyOptionRepository.class);
-    private final PropertyOptionHistoryRepository historyRepository =
-            mock(PropertyOptionHistoryRepository.class);
-    private final PropertyOptionQueryDSLRepository queryRepository = mock(PropertyOptionQueryDSLRepository.class);
-    private final OptionValueValidator valueValidator = mock(OptionValueValidator.class);
-    private final PropertyOptionCommandService service = new PropertyOptionCommandService(
-            optionRepository,
-            historyRepository,
-            queryRepository,
-            valueValidator
+    private static final Long PROPERTY_ID = 100L;
+    private static final Long REVISION_ID = 200L;
+    private static final String CHANGED_FIELDS = "optionValue,displayOrder";
+    private static final String REMOVED_REASON = "OPTION_REMOVED_FROM_REQUEST";
+    private static final PropertyType PROPERTY_TYPE = PropertyType.APARTMENT;
+    private static final ActorContext ACTOR_CONTEXT = ActorContext.member(
+            300L,
+            ActorRole.USER,
+            "property-option-command-test"
     );
 
-    private static final long PROPERTY_REVISION_ID = 900L;
-    private static final String CHANGED_FIELDS = "caller_provided_fields";
-    private final ActorContext actorContext = ActorContext.system("option-create-test");
+    private final PropertyOptionRepository propertyOptionRepository =
+            mock(PropertyOptionRepository.class);
+    private final PropertyOptionHistoryRepository historyRepository =
+            mock(PropertyOptionHistoryRepository.class);
+    private final PropertyOptionQueryDSLRepository queryRepository =
+            mock(PropertyOptionQueryDSLRepository.class);
+
+    private PropertyOptionCommandService service;
 
     @BeforeEach
     void setUp() {
-        when(valueValidator.isValid("true")).thenReturn(true);
-        when(valueValidator.isValid("false")).thenReturn(true);
-        when(optionRepository.save(any(PropertyOption.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        when(optionRepository.saveAll(anyList())).thenAnswer(invocation -> {
-            List<PropertyOption> options = invocation.getArgument(0);
-            for (int index = 0; index < options.size(); index++) {
-                ReflectionTestUtils.setField(
-                        options.get(index),
-                        "propertyOptionId",
-                        1_000L + index
-                );
-            }
-            return options;
-        });
+        service = new PropertyOptionCommandService(
+                propertyOptionRepository,
+                historyRepository,
+                queryRepository,
+                new OptionValueValidator()
+        );
+        when(queryRepository.findActiveOptionsByPropertyId(PROPERTY_ID))
+                .thenReturn(List.of());
+
+        AtomicLong optionId = new AtomicLong(1_000L);
+        when(propertyOptionRepository.save(any(PropertyOption.class)))
+                .thenAnswer(invocation -> {
+                    PropertyOption option = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(
+                            option,
+                            "propertyOptionId",
+                            optionId.getAndIncrement()
+                    );
+                    return option;
+                });
     }
 
     @Test
-    void createOptions_validOptions_savesAll() {
-        PropertyOptionCode airConditioner = optionCode(10L, "AIR_CONDITIONER", true);
-        PropertyOptionCode bed = optionCode(20L, "BED", true);
-        PropertyTypeOption airConditionerMapping = typeOption(10L, 1, true);
-        PropertyTypeOption bedMapping = typeOption(20L, 2);
+    void prepareSync_newOption_requiresChanges() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 3)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
 
-        when(queryRepository.findActiveOptionCodesByCodes(List.of("AIR_CONDITIONER", "BED")))
-                .thenReturn(List.of(airConditioner, bed));
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of(airConditionerMapping, bedMapping));
-        when(queryRepository.findActiveOptionCodesByIds(List.of(10L)))
-                .thenReturn(List.of(airConditioner));
-        when(queryRepository.findActiveOptionsByPropertyId(100L)).thenReturn(List.of());
+        assertThat(prepareSync(List.of(command("ELEVATOR", "true")))
+                .changesRequired()).isTrue();
+    }
 
-        service.createOptions(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
+    @Test
+    void prepareSync_changedValue_requiresChanges() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 3)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+        prepareActiveOptions(option(901L, 10L, "true", 3));
+
+        assertThat(prepareSync(List.of(command("ELEVATOR", "false")))
+                .changesRequired()).isTrue();
+    }
+
+    @Test
+    void prepareSync_changedDisplayOrder_requiresChanges() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 8)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+        prepareActiveOptions(option(901L, 10L, "true", 3));
+
+        assertThat(prepareSync(List.of(command("ELEVATOR", "true")))
+                .changesRequired()).isTrue();
+    }
+
+    @Test
+    void prepareSync_missingExistingOption_requiresChanges() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 1)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+        prepareActiveOptions(
+                option(901L, 10L, "true", 1),
+                option(902L, 20L, "false", 2)
+        );
+
+        assertThat(prepareSync(List.of(command("ELEVATOR", "true")))
+                .changesRequired()).isTrue();
+    }
+
+    @Test
+    void prepareSync_sameFinalState_doesNotRequireChanges() {
+        preparePolicies(
                 List.of(
-                        new PropertyOptionCreateCommand("AIR_CONDITIONER", "true"),
-                        new PropertyOptionCreateCommand("BED", "false")
+                        typeOption(10L, false, 1),
+                        typeOption(20L, false, 2)
                 ),
-                CHANGED_FIELDS,
-                actorContext
+                List.of(
+                        optionCode(10L, "ELEVATOR", true),
+                        optionCode(20L, "PARKING", true)
+                )
+        );
+        prepareActiveOptions(
+                option(901L, 10L, "true", 1),
+                option(902L, 20L, "false", 2)
         );
 
-        verify(optionRepository).saveAll(anyList());
-        verify(historyRepository).saveAll(argThat(histories -> {
-            assertThat(histories)
-                    .hasSize(2)
-                    .allSatisfy(history -> {
-                        assertThat(history.getPropertyRevisionId())
-                                .isEqualTo(PROPERTY_REVISION_ID);
-                        assertThat(history.getChangeType().name()).isEqualTo("CREATE");
-                        assertThat(history.getChangedFields()).isEqualTo(CHANGED_FIELDS);
-                        assertThat(history.getBeforeValue()).isNull();
-                        assertThat(history.getAfterValue()).isIn("true", "false");
-                    });
-            return true;
-        }));
+        assertThat(prepareSync(List.of(
+                command("ELEVATOR", "true"),
+                command("PARKING", "false")
+        )).changesRequired()).isFalse();
     }
 
     @Test
-    void createOptions_missingRequiredOption_rejectsBeforeSave() {
-        PropertyOptionCode airConditioner = optionCode(10L, "AIR_CONDITIONER", true);
-        PropertyOptionCode bed = optionCode(20L, "BED", true);
-        PropertyTypeOption airConditionerMapping = typeOption(10L, 1, true);
-        PropertyTypeOption bedMapping = typeOption(20L, 2);
+    void prepareSync_emptyRequestWithActiveOption_requiresChanges() {
+        preparePolicies(List.of(), List.of());
+        prepareActiveOptions(option(901L, 10L, "true", 1));
 
-        when(queryRepository.findActiveOptionCodesByCodes(List.of("BED")))
-                .thenReturn(List.of(bed));
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of(airConditionerMapping, bedMapping));
-        when(queryRepository.findActiveOptionCodesByIds(List.of(10L)))
-                .thenReturn(List.of(airConditioner));
-        when(queryRepository.findActiveOptionsByPropertyId(100L)).thenReturn(List.of());
-
-        assertThatThrownBy(() -> service.createOptions(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                List.of(new PropertyOptionCreateCommand("BED", "true")),
-                CHANGED_FIELDS,
-                actorContext
-        )).isInstanceOf(OptionValueRequiredException.class)
-                .hasMessageContaining("AIR_CONDITIONER");
-
-        verify(optionRepository, never()).saveAll(anyList());
-        verify(historyRepository, never()).saveAll(anyList());
+        assertThat(prepareSync(List.of()).changesRequired()).isTrue();
     }
 
     @Test
-    void createOptions_emptyCommandsWithRequiredOption_rejects() {
-        PropertyOptionCode bed = optionCode(20L, "BED", true);
-        PropertyTypeOption bedMapping = typeOption(20L, 1, true);
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of(bedMapping));
-        when(queryRepository.findActiveOptionCodesByIds(List.of(20L)))
-                .thenReturn(List.of(bed));
+    void prepareSync_emptyRequestWithoutActiveOption_doesNotRequireChanges() {
+        preparePolicies(List.of(), List.of());
 
-        assertThatThrownBy(() -> service.createOptions(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
+        assertThat(prepareSync(List.of()).changesRequired()).isFalse();
+    }
+
+    @Test
+    void prepareSync_missingRequiredOption_fails() {
+        preparePolicies(
+                List.of(typeOption(10L, true, 1)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+
+        assertThatThrownBy(() -> prepareSync(List.of()))
+                .isInstanceOf(OptionValueRequiredException.class);
+    }
+
+    @Test
+    void prepareSync_duplicateRequestCode_fails() {
+        assertThatThrownBy(() -> prepareSync(List.of(
+                command("ELEVATOR", "true"),
+                command("ELEVATOR", "false")
+        ))).isInstanceOfSatisfying(BusinessException.class, exception ->
+                assertThat(exception.getCustomResponseCode())
+                        .isEqualTo(CustomResponseCode.DUPLICATED_RESOURCE)
+        );
+    }
+
+    @Test
+    void prepareSync_duplicateActiveTypePolicy_fails() {
+        preparePolicies(
+                List.of(
+                        typeOption(10L, false, 1),
+                        typeOption(10L, true, 2)
+                ),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+
+        assertThatThrownBy(() -> prepareSync(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getCustomResponseCode())
+                                .isEqualTo(CustomResponseCode.SYSTEM_ERROR)
+                );
+    }
+
+    @Test
+    void prepareSync_duplicateActivePropertyOption_fails() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 1)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+        prepareActiveOptions(
+                option(901L, 10L, "true", 1),
+                option(902L, 10L, "false", 1)
+        );
+
+        assertThatThrownBy(() -> prepareSync(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getCustomResponseCode())
+                                .isEqualTo(CustomResponseCode.DUPLICATED_RESOURCE)
+                );
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", " ", "TRUE", "False", "1"})
+    void prepareSync_invalidOptionValue_fails(String optionValue) {
+        assertThatThrownBy(() -> prepareSync(List.of(
+                command("ELEVATOR", optionValue)
+        ))).isInstanceOfAny(
+                OptionValueRequiredException.class,
+                OptionValueInvalidException.class
+        );
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", " "})
+    void prepareSync_nullOrBlankOptionCode_fails(String optionCode) {
+        assertThatThrownBy(() -> prepareSync(List.of(command(optionCode, "true"))))
+                .isInstanceOf(OptionCodeNotFoundException.class);
+    }
+
+    @Test
+    void prepareSync_unknownOrInactiveOptionCode_fails() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 1)),
+                List.of()
+        );
+
+        assertThatThrownBy(() -> prepareSync(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOf(OptionCodeNotFoundException.class);
+    }
+
+    @Test
+    void prepareSync_optionNotAllowedForPropertyType_fails() {
+        preparePolicies(
                 List.of(),
-                CHANGED_FIELDS,
-                actorContext
-        )).isInstanceOf(OptionValueRequiredException.class)
-                .hasMessageContaining("BED");
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
 
-        verify(optionRepository, never()).saveAll(anyList());
+        assertThatThrownBy(() -> prepareSync(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOf(OptionNotAllowedForPropertyTypeException.class);
+    }
+
+    @Test
+    void prepareSync_registrationDisabledOption_fails() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 1)),
+                List.of(optionCode(10L, "ELEVATOR", false))
+        );
+
+        assertThatThrownBy(() -> prepareSync(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOf(OptionNotAllowedForPropertyTypeException.class);
+    }
+
+    @Test
+    void prepareSync_nullPropertyId_fails() {
+        assertThatThrownBy(() -> service.prepareSync(
+                null,
+                PROPERTY_TYPE,
+                List.of()
+        )).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void prepareSync_nullPropertyType_fails() {
+        assertThatThrownBy(() -> service.prepareSync(
+                PROPERTY_ID,
+                null,
+                List.of()
+        )).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void prepareSync_nullCommands_fails() {
+        assertThatThrownBy(() -> service.prepareSync(
+                PROPERTY_ID,
+                PROPERTY_TYPE,
+                null
+        )).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void prepareSync_neverWritesOptionsOrHistories() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 2)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+        prepareActiveOptions(option(901L, 10L, "false", 1));
+
+        prepareSync(List.of(command("ELEVATOR", "true")));
+
+        verifyNoPersistenceInteractions();
+        verify(propertyOptionRepository, never()).save(any(PropertyOption.class));
+        verify(propertyOptionRepository, never()).saveAll(anyList());
+        verify(historyRepository, never()).save(any(PropertyOptionHistory.class));
         verify(historyRepository, never()).saveAll(anyList());
     }
 
     @Test
-    void createOptions_emptyCommandsWithoutRequiredOption_keepsNoOpBehavior() {
-        PropertyTypeOption bedMapping = typeOption(20L, 1);
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of(bedMapping));
+    void synchronizeOptions_newOption_createsOptionAndCreateHistory() {
+        PropertyOptionCode code = optionCode(10L, "ELEVATOR", true);
+        PropertyTypeOption policy = typeOption(10L, false, 3);
+        preparePolicies(List.of(policy), List.of(code));
 
-        service.createOptions(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
+        synchronize(List.of(command("ELEVATOR", "true")));
+
+        PropertyOption created = captureCreatedOption();
+        assertThat(created.getPropertyId()).isEqualTo(PROPERTY_ID);
+        assertThat(created.getOptionCodeId()).isEqualTo(10L);
+        assertThat(created.getOptionValue()).isEqualTo("true");
+        assertThat(created.getDisplayOrder()).isEqualTo(3);
+
+        PropertyOptionHistory history = captureHistories().getFirst();
+        assertCreateHistory(history, created, "true", 3);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"true,false", "false,true"})
+    void synchronizeOptions_changedValue_updatesValueAndHistory(
+            String beforeValue,
+            String afterValue
+    ) {
+        PropertyOptionCode code = optionCode(10L, "ELEVATOR", true);
+        preparePolicies(
+                List.of(typeOption(10L, false, 3)),
+                List.of(code)
+        );
+        PropertyOption existing = option(901L, 10L, beforeValue, 3);
+        prepareActiveOptions(existing);
+
+        synchronize(List.of(command("ELEVATOR", afterValue)));
+
+        assertThat(existing.getOptionValue()).isEqualTo(afterValue);
+        assertThat(existing.getDisplayOrder()).isEqualTo(3);
+        PropertyOptionHistory history = captureHistories().getFirst();
+        assertUpdateHistory(history, existing, beforeValue, afterValue, 3, 3);
+    }
+
+    @Test
+    void synchronizeOptions_changedDisplayOrder_updatesOnceAndHistory() {
+        PropertyOptionCode code = optionCode(10L, "ELEVATOR", true);
+        preparePolicies(
+                List.of(typeOption(10L, false, 8)),
+                List.of(code)
+        );
+        PropertyOption existing = option(901L, 10L, "true", 2);
+        prepareActiveOptions(existing);
+
+        synchronize(List.of(command("ELEVATOR", "true")));
+
+        assertThat(existing.getOptionValue()).isEqualTo("true");
+        assertThat(existing.getDisplayOrder()).isEqualTo(8);
+        PropertyOptionHistory history = captureHistories().getFirst();
+        assertUpdateHistory(history, existing, "true", "true", 2, 8);
+        verify(historyRepository).saveAll(anyList());
+    }
+
+    @Test
+    void synchronizeOptions_missingExistingOption_softDeletesAndCreatesHistory() {
+        preparePolicies(List.of(), List.of());
+        PropertyOption existing = option(901L, 10L, "false", 4);
+        prepareActiveOptions(existing);
+
+        synchronize(List.of());
+
+        assertThat(existing.getDeletedAt()).isNotNull();
+        assertThat(existing.getDeleteReason()).isEqualTo(REMOVED_REASON);
+        PropertyOptionHistory history = captureHistories().getFirst();
+        assertSoftDeleteHistory(history, existing, "false", 4);
+    }
+
+    @Test
+    void synchronizeOptions_sameValueAndDisplayOrder_doesNothing() {
+        PropertyOptionCode code = optionCode(10L, "ELEVATOR", true);
+        preparePolicies(
+                List.of(typeOption(10L, false, 3)),
+                List.of(code)
+        );
+        prepareActiveOptions(option(901L, 10L, "true", 3));
+
+        synchronize(List.of(command("ELEVATOR", "true")));
+
+        verify(propertyOptionRepository, never()).save(any(PropertyOption.class));
+        verify(propertyOptionRepository, never()).saveAll(anyList());
+        verifyNoInteractions(historyRepository);
+    }
+
+    @Test
+    void synchronizeOptions_mixedChanges_appliesCreateUpdateDeleteAndNoOp() {
+        PropertyOptionCode unchangedCode = optionCode(10L, "ELEVATOR", true);
+        PropertyOptionCode createdCode = optionCode(20L, "PARKING", true);
+        PropertyOptionCode updatedCode = optionCode(30L, "PET", true);
+        preparePolicies(
+                List.of(
+                        typeOption(10L, false, 1),
+                        typeOption(20L, false, 2),
+                        typeOption(30L, false, 7)
+                ),
+                List.of(unchangedCode, createdCode, updatedCode)
+        );
+        PropertyOption unchanged = option(901L, 10L, "true", 1);
+        PropertyOption updated = option(902L, 30L, "true", 3);
+        PropertyOption removed = option(903L, 40L, "false", 4);
+        prepareActiveOptions(unchanged, updated, removed);
+
+        synchronize(List.of(
+                command("ELEVATOR", "true"),
+                command("PARKING", "false"),
+                command("PET", "false")
+        ));
+
+        PropertyOption created = captureCreatedOption();
+        assertThat(created.getOptionCodeId()).isEqualTo(20L);
+        assertThat(updated.getOptionValue()).isEqualTo("false");
+        assertThat(updated.getDisplayOrder()).isEqualTo(7);
+        assertThat(removed.getDeletedAt()).isNotNull();
+        assertThat(unchanged.getDeletedAt()).isNull();
+
+        List<PropertyOptionHistory> histories = captureHistories();
+        assertThat(histories).hasSize(3);
+        assertThat(histories)
+                .extracting(PropertyOptionHistory::getChangeType)
+                .containsExactlyInAnyOrder(
+                        OptionChangeType.CREATE,
+                        OptionChangeType.UPDATE,
+                        OptionChangeType.SOFT_DELETE
+                );
+        assertCreateHistory(
+                historyOf(histories, OptionChangeType.CREATE),
+                created,
+                "false",
+                2
+        );
+        assertUpdateHistory(
+                historyOf(histories, OptionChangeType.UPDATE),
+                updated,
+                "true",
+                "false",
+                3,
+                7
+        );
+        assertSoftDeleteHistory(
+                historyOf(histories, OptionChangeType.SOFT_DELETE),
+                removed,
+                "false",
+                4
+        );
+    }
+
+    @Test
+    void synchronizeOptions_missingRequiredOption_failsBeforeChanges() {
+        PropertyOptionCode requiredCode = optionCode(10L, "ELEVATOR", true);
+        preparePolicies(
+                List.of(typeOption(10L, true, 1)),
+                List.of(requiredCode)
+        );
+        PropertyOption existing = option(901L, 20L, "true", 2);
+        prepareActiveOptions(existing);
+
+        assertThatThrownBy(() -> synchronize(List.of()))
+                .isInstanceOf(OptionValueRequiredException.class);
+
+        assertThat(existing.getDeletedAt()).isNull();
+        verifyNoPersistenceInteractions();
+        verify(queryRepository, never()).findActiveOptionsByPropertyId(PROPERTY_ID);
+    }
+
+    @Test
+    void synchronizeOptions_duplicateRequestCode_failsBeforeChanges() {
+        assertThatThrownBy(() -> synchronize(List.of(
+                command("ELEVATOR", "true"),
+                command("ELEVATOR", "false")
+        ))).isInstanceOfSatisfying(BusinessException.class, exception ->
+                assertThat(exception.getCustomResponseCode())
+                        .isEqualTo(CustomResponseCode.DUPLICATED_RESOURCE)
+        );
+
+        verifyNoPersistenceInteractions();
+        verify(queryRepository, never()).findActiveTypeOptions(PROPERTY_TYPE);
+    }
+
+    @Test
+    void synchronizeOptions_duplicateActiveTypePolicy_failsBeforeChanges() {
+        preparePolicies(
+                List.of(
+                        typeOption(10L, false, 1),
+                        typeOption(10L, true, 9)
+                ),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+
+        assertThatThrownBy(() -> synchronize(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getCustomResponseCode())
+                                .isEqualTo(CustomResponseCode.SYSTEM_ERROR)
+                );
+
+        verifyNoPersistenceInteractions();
+        verify(queryRepository, never()).findActiveOptionsByPropertyId(PROPERTY_ID);
+    }
+
+    @Test
+    void synchronizeOptions_duplicateActivePropertyOption_failsBeforeChanges() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 1)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+        prepareActiveOptions(
+                option(901L, 10L, "true", 1),
+                option(902L, 10L, "false", 1)
+        );
+
+        assertThatThrownBy(() -> synchronize(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getCustomResponseCode())
+                                .isEqualTo(CustomResponseCode.DUPLICATED_RESOURCE)
+                );
+
+        verifyNoPersistenceInteractions();
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", " ", "TRUE", "False", "1"})
+    void synchronizeOptions_invalidOptionValue_fails(String optionValue) {
+        assertThatThrownBy(() -> synchronize(List.of(
+                command("ELEVATOR", optionValue)
+        ))).isInstanceOfAny(
+                OptionValueRequiredException.class,
+                OptionValueInvalidException.class
+        );
+
+        verifyNoPersistenceInteractions();
+        verify(queryRepository, never()).findActiveTypeOptions(PROPERTY_TYPE);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"true", "false"})
+    void synchronizeOptions_exactLowercaseBooleanValue_isAccepted(String optionValue) {
+        preparePolicies(
+                List.of(typeOption(10L, false, 1)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+
+        synchronize(List.of(command("ELEVATOR", optionValue)));
+
+        assertThat(captureCreatedOption().getOptionValue()).isEqualTo(optionValue);
+    }
+
+    @Test
+    void synchronizeOptions_unknownOptionCode_fails() {
+        preparePolicies(List.of(), List.of());
+
+        assertThatThrownBy(() -> synchronize(List.of(command("UNKNOWN", "true"))))
+                .isInstanceOf(OptionCodeNotFoundException.class);
+
+        verifyNoPersistenceInteractions();
+    }
+
+    @Test
+    void synchronizeOptions_inactiveOptionCode_fails() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 1)),
+                List.of()
+        );
+
+        assertThatThrownBy(() -> synchronize(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOf(OptionCodeNotFoundException.class);
+
+        verifyNoPersistenceInteractions();
+    }
+
+    @Test
+    void synchronizeOptions_optionNotAllowedForPropertyType_fails() {
+        preparePolicies(
                 List.of(),
-                CHANGED_FIELDS,
-                actorContext
+                List.of(optionCode(10L, "ELEVATOR", true))
         );
 
-        verify(optionRepository, never()).saveAll(anyList());
-        verify(historyRepository, never()).saveAll(anyList());
+        assertThatThrownBy(() -> synchronize(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOf(OptionNotAllowedForPropertyTypeException.class);
+
+        verifyNoPersistenceInteractions();
     }
 
     @Test
-    void createOptions_duplicateCodeInRequest_rejectsBeforeQuery() {
-        List<PropertyOptionCreateCommand> commands = List.of(
-                new PropertyOptionCreateCommand("BED", "true"),
-                new PropertyOptionCreateCommand("BED", "false")
+    void synchronizeOptions_registrationDisabledOption_fails() {
+        preparePolicies(
+                List.of(typeOption(10L, false, 1)),
+                List.of(optionCode(10L, "ELEVATOR", false))
         );
 
-        assertThatThrownBy(() -> service.createOptions(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
+        assertThatThrownBy(() -> synchronize(List.of(command("ELEVATOR", "true"))))
+                .isInstanceOf(OptionNotAllowedForPropertyTypeException.class);
+
+        verifyNoPersistenceInteractions();
+    }
+
+    @Test
+    void synchronizeOptions_softDeletedExistingOption_isCreatedAgain() {
+        PropertyOption softDeleted = option(901L, 10L, "false", 1);
+        softDeleted.softDelete(
+                ACTOR_CONTEXT,
+                Instant.now().minusSeconds(10),
+                "OLD_DELETE"
+        );
+        preparePolicies(
+                List.of(typeOption(10L, false, 5)),
+                List.of(optionCode(10L, "ELEVATOR", true))
+        );
+        when(queryRepository.findActiveOptionsByPropertyId(PROPERTY_ID))
+                .thenReturn(List.of());
+
+        synchronize(List.of(command("ELEVATOR", "true")));
+
+        PropertyOption created = captureCreatedOption();
+        assertThat(created.getPropertyOptionId())
+                .isNotEqualTo(softDeleted.getPropertyOptionId());
+        assertThat(created.getOptionCodeId()).isEqualTo(10L);
+        assertCreateHistory(captureHistories().getFirst(), created, "true", 5);
+    }
+
+    private void synchronize(List<PropertyOptionCreateCommand> commands) {
+        service.synchronizeOptions(
+                PROPERTY_ID,
+                REVISION_ID,
+                PROPERTY_TYPE,
                 commands,
                 CHANGED_FIELDS,
-                actorContext
-        ))
-                .isInstanceOfSatisfying(BusinessException.class, exception ->
-                        assertThat(exception.getCustomResponseCode())
-                                .isEqualTo(CustomResponseCode.DUPLICATED_RESOURCE)
-                );
-
-        verify(optionRepository, never()).saveAll(anyList());
-    }
-
-    @Test
-    void createOptions_invalidValue_rejects() {
-        when(valueValidator.isValid("TRUE")).thenReturn(false);
-
-        assertThatThrownBy(() -> service.createOptions(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                List.of(new PropertyOptionCreateCommand("BED", "TRUE")),
-                CHANGED_FIELDS,
-                actorContext
-        )).isInstanceOf(OptionValueInvalidException.class);
-    }
-
-    @Test
-    void createOptions_missingOrInactiveCode_rejects() {
-        when(queryRepository.findActiveOptionCodesByCodes(List.of("BED")))
-                .thenReturn(List.of());
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of());
-        when(queryRepository.findActiveOptionsByPropertyId(100L)).thenReturn(List.of());
-
-        assertThatThrownBy(() -> service.createOptions(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                List.of(new PropertyOptionCreateCommand("BED", "true")),
-                CHANGED_FIELDS,
-                actorContext
-        )).isInstanceOf(OptionCodeNotFoundException.class);
-    }
-
-    @Test
-    void createOptions_notAllowedForPropertyType_rejects() {
-        PropertyOptionCode bed = optionCode(20L, "BED", true);
-        when(queryRepository.findActiveOptionCodesByCodes(List.of("BED")))
-                .thenReturn(List.of(bed));
-        when(queryRepository.findActiveTypeOptions(PropertyType.APARTMENT))
-                .thenReturn(List.of());
-        when(queryRepository.findActiveOptionsByPropertyId(100L)).thenReturn(List.of());
-
-        assertThatThrownBy(() -> service.createOptions(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.APARTMENT,
-                List.of(new PropertyOptionCreateCommand("BED", "true")),
-                CHANGED_FIELDS,
-                actorContext
-        )).isInstanceOf(OptionNotAllowedForPropertyTypeException.class);
-    }
-
-    @Test
-    void createOptions_registrationDisabled_rejects() {
-        PropertyOptionCode bed = optionCode(20L, "BED", false);
-        PropertyTypeOption bedMapping = typeOption(20L, 1);
-        when(queryRepository.findActiveOptionCodesByCodes(List.of("BED")))
-                .thenReturn(List.of(bed));
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of(bedMapping));
-        when(queryRepository.findActiveOptionsByPropertyId(100L)).thenReturn(List.of());
-
-        assertThatThrownBy(() -> service.createOptions(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                List.of(new PropertyOptionCreateCommand("BED", "true")),
-                CHANGED_FIELDS,
-                actorContext
-        )).isInstanceOf(OptionNotAllowedForPropertyTypeException.class);
-    }
-
-    @Test
-    void createOptions_activeDuplicate_rejects() {
-        PropertyOptionCode bed = optionCode(20L, "BED", true);
-        PropertyTypeOption bedMapping = typeOption(20L, 1);
-        when(queryRepository.findActiveOptionCodesByCodes(List.of("BED")))
-                .thenReturn(List.of(bed));
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of(bedMapping));
-        when(queryRepository.findActiveOptionsByPropertyId(100L))
-                .thenReturn(List.of(new PropertyOption(100L, 20L, "false", 1, actorContext)));
-
-        assertThatThrownBy(() -> service.createOptions(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                List.of(new PropertyOptionCreateCommand("BED", "true")),
-                CHANGED_FIELDS,
-                actorContext
-        ))
-                .isInstanceOfSatisfying(BusinessException.class, exception ->
-                        assertThat(exception.getCustomResponseCode())
-                                .isEqualTo(CustomResponseCode.DUPLICATED_RESOURCE)
-                );
-
-        verify(optionRepository, never()).saveAll(anyList());
-    }
-
-    @Test
-    void changeOptionValue_validOption_changesAndSaves() {
-        PropertyOptionCode bed = optionCode(20L, "BED", true);
-        PropertyTypeOption bedMapping = typeOption(20L, 1);
-        PropertyOption propertyOption =
-                new PropertyOption(100L, 20L, "true", 1, actorContext);
-        ReflectionTestUtils.setField(propertyOption, "propertyOptionId", 1_000L);
-        when(queryRepository.findActiveOptionCode("BED"))
-                .thenReturn(Optional.of(bed));
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of(bedMapping));
-        when(queryRepository.findActiveOptionsByPropertyIdAndOptionCodeId(100L, 20L))
-                .thenReturn(List.of(propertyOption));
-
-        service.changeOptionValue(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                "BED",
-                "false",
-                CHANGED_FIELDS,
-                actorContext
+                ACTOR_CONTEXT
         );
-
-        assertThat(propertyOption.getOptionValue()).isEqualTo("false");
-        verify(optionRepository).save(propertyOption);
-        ArgumentCaptor<PropertyOptionHistory> historyCaptor =
-                ArgumentCaptor.forClass(PropertyOptionHistory.class);
-        verify(historyRepository).save(historyCaptor.capture());
-        PropertyOptionHistory history = historyCaptor.getValue();
-        assertThat(history.getPropertyRevisionId()).isEqualTo(PROPERTY_REVISION_ID);
-        assertThat(history.getChangeType().name()).isEqualTo("UPDATE");
-        assertThat(history.getChangedFields()).isEqualTo(CHANGED_FIELDS);
-        assertThat(history.getBeforeValue()).isEqualTo("true");
-        assertThat(history.getAfterValue()).isEqualTo("false");
-        assertThat(history.getBeforeDeletedAt()).isNull();
-        assertThat(history.getAfterDeletedAt()).isNull();
     }
 
-    @Test
-    void changeOptionValue_invalidValue_rejectsBeforeQuery() {
-        when(valueValidator.isValid("TRUE")).thenReturn(false);
-
-        assertThatThrownBy(() -> service.changeOptionValue(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                "BED",
-                "TRUE",
-                CHANGED_FIELDS,
-                actorContext
-        )).isInstanceOf(OptionValueInvalidException.class);
-
-        verify(optionRepository, never()).save(any(PropertyOption.class));
-    }
-
-    @Test
-    void changeOptionValue_inactiveOrDeletedCode_rejects() {
-        when(queryRepository.findActiveOptionCode("BED")).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.changeOptionValue(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                "BED",
-                "true",
-                CHANGED_FIELDS,
-                actorContext
-        )).isInstanceOf(OptionCodeNotFoundException.class);
-    }
-
-    @Test
-    void changeOptionValue_notAllowedForPropertyType_rejects() {
-        PropertyOptionCode bed = optionCode(20L, "BED", true);
-        when(queryRepository.findActiveOptionCode("BED")).thenReturn(Optional.of(bed));
-        when(queryRepository.findActiveTypeOptions(PropertyType.APARTMENT))
-                .thenReturn(List.of());
-
-        assertThatThrownBy(() -> service.changeOptionValue(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.APARTMENT,
-                "BED",
-                "true",
-                CHANGED_FIELDS,
-                actorContext
-        )).isInstanceOf(OptionNotAllowedForPropertyTypeException.class);
-    }
-
-    @Test
-    void changeOptionValue_registrationDisabled_rejects() {
-        PropertyOptionCode bed = optionCode(20L, "BED", false);
-        PropertyTypeOption bedMapping = typeOption(20L, 1);
-        when(queryRepository.findActiveOptionCode("BED")).thenReturn(Optional.of(bed));
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of(bedMapping));
-
-        assertThatThrownBy(() -> service.changeOptionValue(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                "BED",
-                "true",
-                CHANGED_FIELDS,
-                actorContext
-        )).isInstanceOf(OptionNotAllowedForPropertyTypeException.class);
-    }
-
-    @Test
-    void changeOptionValue_noActivePropertyOption_rejects() {
-        PropertyOptionCode bed = optionCode(20L, "BED", true);
-        PropertyTypeOption bedMapping = typeOption(20L, 1);
-        when(queryRepository.findActiveOptionCode("BED")).thenReturn(Optional.of(bed));
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of(bedMapping));
-        when(queryRepository.findActiveOptionsByPropertyIdAndOptionCodeId(100L, 20L))
-                .thenReturn(List.of());
-
-        assertThatThrownBy(() -> service.changeOptionValue(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                "BED",
-                "true",
-                CHANGED_FIELDS,
-                actorContext
-        ))
-                .isInstanceOfSatisfying(BusinessException.class, exception ->
-                        assertThat(exception.getCustomResponseCode())
-                                .isEqualTo(CustomResponseCode.NOT_FOUND_RESOURCE)
-                );
-    }
-
-    @Test
-    void softDeleteOption_registrationDisabled_deletesActiveOption() {
-        PropertyOptionCode bed = optionCode(20L, "BED", false);
-        PropertyTypeOption bedMapping = typeOption(20L, 1);
-        PropertyOption propertyOption =
-                new PropertyOption(100L, 20L, "true", 1, actorContext);
-        ReflectionTestUtils.setField(propertyOption, "propertyOptionId", 1_000L);
-        when(queryRepository.findActiveOptionCode("BED"))
-                .thenReturn(Optional.of(bed));
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of(bedMapping));
-        when(queryRepository.findActiveOptionsByPropertyIdAndOptionCodeId(100L, 20L))
-                .thenReturn(List.of(propertyOption));
-
-        service.softDeleteOption(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                "BED",
-                "매물 옵션 제거",
-                CHANGED_FIELDS,
-                actorContext
+    private PropertyOptionCommandService.OptionSyncPlan prepareSync(
+            List<PropertyOptionCreateCommand> commands
+    ) {
+        return service.prepareSync(
+                PROPERTY_ID,
+                PROPERTY_TYPE,
+                commands
         );
-
-        assertThat(propertyOption.isDeleted()).isTrue();
-        assertThat(propertyOption.getDeletedAt()).isNotNull();
-        assertThat(propertyOption.getDeleteReason()).isEqualTo("매물 옵션 제거");
-        verify(optionRepository).save(propertyOption);
-        verify(optionRepository, never()).delete(propertyOption);
-        ArgumentCaptor<PropertyOptionHistory> historyCaptor =
-                ArgumentCaptor.forClass(PropertyOptionHistory.class);
-        verify(historyRepository).save(historyCaptor.capture());
-        PropertyOptionHistory history = historyCaptor.getValue();
-        assertThat(history.getPropertyRevisionId()).isEqualTo(PROPERTY_REVISION_ID);
-        assertThat(history.getChangeType().name()).isEqualTo("SOFT_DELETE");
-        assertThat(history.getChangedFields()).isEqualTo(CHANGED_FIELDS);
-        assertThat(history.getBeforeValue()).isEqualTo("true");
-        assertThat(history.getAfterValue()).isEqualTo("true");
-        assertThat(history.getBeforeDeletedAt()).isNull();
-        assertThat(history.getAfterDeletedAt()).isEqualTo(propertyOption.getDeletedAt());
     }
 
-    @Test
-    void softDeleteOption_noActivePropertyOption_rejects() {
-        PropertyOptionCode bed = optionCode(20L, "BED", false);
-        PropertyTypeOption bedMapping = typeOption(20L, 1);
-        when(queryRepository.findActiveOptionCode("BED"))
-                .thenReturn(Optional.of(bed));
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of(bedMapping));
-        when(queryRepository.findActiveOptionsByPropertyIdAndOptionCodeId(100L, 20L))
-                .thenReturn(List.of());
-
-        assertThatThrownBy(() -> service.softDeleteOption(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                "BED",
-                "매물 옵션 제거",
-                CHANGED_FIELDS,
-                actorContext
-        ))
-                .isInstanceOfSatisfying(BusinessException.class, exception ->
-                        assertThat(exception.getCustomResponseCode())
-                                .isEqualTo(CustomResponseCode.NOT_FOUND_RESOURCE)
-                );
-
-        verify(optionRepository, never()).save(any(PropertyOption.class));
-        verify(optionRepository, never()).delete(any(PropertyOption.class));
+    private void preparePolicies(
+            List<PropertyTypeOption> policies,
+            List<PropertyOptionCode> activeCodes
+    ) {
+        when(queryRepository.findActiveTypeOptions(PROPERTY_TYPE))
+                .thenReturn(policies);
+        when(queryRepository.findActiveOptionCodesByCodes(anyCollection()))
+                .thenAnswer(invocation -> {
+                    Collection<String> requestedCodes = invocation.getArgument(0);
+                    return activeCodes.stream()
+                            .filter(code -> requestedCodes.contains(code.getOptionCode()))
+                            .toList();
+                });
+        when(queryRepository.findActiveOptionCodesByIds(anyCollection()))
+                .thenAnswer(invocation -> {
+                    Collection<Long> requestedIds = invocation.getArgument(0);
+                    return activeCodes.stream()
+                            .filter(code -> requestedIds.contains(code.getOptionCodeId()))
+                            .toList();
+                });
     }
 
-    @Test
-    void softDeleteOption_multipleActivePropertyOptions_rejects() {
-        PropertyOptionCode bed = optionCode(20L, "BED", false);
-        PropertyTypeOption bedMapping = typeOption(20L, 1);
-        PropertyOption firstOption =
-                new PropertyOption(100L, 20L, "true", 1, actorContext);
-        PropertyOption secondOption =
-                new PropertyOption(100L, 20L, "false", 2, actorContext);
-        when(queryRepository.findActiveOptionCode("BED"))
-                .thenReturn(Optional.of(bed));
-        when(queryRepository.findActiveTypeOptions(PropertyType.ROOM))
-                .thenReturn(List.of(bedMapping));
-        when(queryRepository.findActiveOptionsByPropertyIdAndOptionCodeId(100L, 20L))
-                .thenReturn(List.of(firstOption, secondOption));
+    private void prepareActiveOptions(PropertyOption... options) {
+        when(queryRepository.findActiveOptionsByPropertyId(PROPERTY_ID))
+                .thenReturn(List.of(options));
+    }
 
-        assertThatThrownBy(() -> service.softDeleteOption(
-                100L,
-                PROPERTY_REVISION_ID,
-                PropertyType.ROOM,
-                "BED",
-                "매물 옵션 제거",
-                CHANGED_FIELDS,
-                actorContext
-        ))
-                .isInstanceOfSatisfying(BusinessException.class, exception ->
-                        assertThat(exception.getCustomResponseCode())
-                                .isEqualTo(CustomResponseCode.DUPLICATED_RESOURCE)
-                );
-
-        assertThat(firstOption.isDeleted()).isFalse();
-        assertThat(secondOption.isDeleted()).isFalse();
-        verify(optionRepository, never()).save(any(PropertyOption.class));
-        verify(optionRepository, never()).delete(any(PropertyOption.class));
+    private PropertyOptionCreateCommand command(String code, String value) {
+        return new PropertyOptionCreateCommand(code, value);
     }
 
     private PropertyOptionCode optionCode(
             Long optionCodeId,
-            String optionCode,
+            String code,
             boolean registrationEnabled
     ) {
-        PropertyOptionCode entity = mock(PropertyOptionCode.class);
-        when(entity.getOptionCodeId()).thenReturn(optionCodeId);
-        when(entity.getOptionCode()).thenReturn(optionCode);
-        when(entity.isRegistrationEnabled()).thenReturn(registrationEnabled);
-        return entity;
-    }
-
-    private PropertyTypeOption typeOption(Long optionCodeId, int displayOrder) {
-        return typeOption(optionCodeId, displayOrder, false);
+        PropertyOptionCode optionCode = mock(PropertyOptionCode.class);
+        when(optionCode.getOptionCodeId()).thenReturn(optionCodeId);
+        when(optionCode.getOptionCode()).thenReturn(code);
+        when(optionCode.isRegistrationEnabled()).thenReturn(registrationEnabled);
+        return optionCode;
     }
 
     private PropertyTypeOption typeOption(
             Long optionCodeId,
-            int displayOrder,
-            boolean required
+            boolean required,
+            int displayOrder
     ) {
-        PropertyTypeOption entity = mock(PropertyTypeOption.class);
-        when(entity.getOptionCodeId()).thenReturn(optionCodeId);
-        when(entity.getDisplayOrder()).thenReturn(displayOrder);
-        when(entity.isRequired()).thenReturn(required);
-        return entity;
+        PropertyTypeOption typeOption = mock(PropertyTypeOption.class);
+        when(typeOption.getOptionCodeId()).thenReturn(optionCodeId);
+        when(typeOption.isRequired()).thenReturn(required);
+        when(typeOption.getDisplayOrder()).thenReturn(displayOrder);
+        return typeOption;
+    }
+
+    private PropertyOption option(
+            Long propertyOptionId,
+            Long optionCodeId,
+            String value,
+            int displayOrder
+    ) {
+        PropertyOption option = new PropertyOption(
+                PROPERTY_ID,
+                optionCodeId,
+                value,
+                displayOrder,
+                ACTOR_CONTEXT
+        );
+        ReflectionTestUtils.setField(
+                option,
+                "propertyOptionId",
+                propertyOptionId
+        );
+        return option;
+    }
+
+    private PropertyOption captureCreatedOption() {
+        ArgumentCaptor<PropertyOption> captor =
+                ArgumentCaptor.forClass(PropertyOption.class);
+        verify(propertyOptionRepository).save(captor.capture());
+        return captor.getValue();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<PropertyOptionHistory> captureHistories() {
+        ArgumentCaptor<List<PropertyOptionHistory>> captor =
+                ArgumentCaptor.forClass(List.class);
+        verify(historyRepository).saveAll(captor.capture());
+        return captor.getValue();
+    }
+
+    private PropertyOptionHistory historyOf(
+            List<PropertyOptionHistory> histories,
+            OptionChangeType changeType
+    ) {
+        return histories.stream()
+                .filter(history -> history.getChangeType() == changeType)
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private void assertCreateHistory(
+            PropertyOptionHistory history,
+            PropertyOption option,
+            String afterValue,
+            int afterDisplayOrder
+    ) {
+        assertCommonHistory(history, option, OptionChangeType.CREATE);
+        assertThat(history.getBeforeValue()).isNull();
+        assertThat(history.getAfterValue()).isEqualTo(afterValue);
+        assertThat(history.getBeforeDisplayOrder()).isNull();
+        assertThat(history.getAfterDisplayOrder()).isEqualTo(afterDisplayOrder);
+        assertThat(history.getBeforeDeletedAt()).isNull();
+        assertThat(history.getAfterDeletedAt()).isNull();
+    }
+
+    private void assertUpdateHistory(
+            PropertyOptionHistory history,
+            PropertyOption option,
+            String beforeValue,
+            String afterValue,
+            int beforeDisplayOrder,
+            int afterDisplayOrder
+    ) {
+        assertCommonHistory(history, option, OptionChangeType.UPDATE);
+        assertThat(history.getBeforeValue()).isEqualTo(beforeValue);
+        assertThat(history.getAfterValue()).isEqualTo(afterValue);
+        assertThat(history.getBeforeDisplayOrder()).isEqualTo(beforeDisplayOrder);
+        assertThat(history.getAfterDisplayOrder()).isEqualTo(afterDisplayOrder);
+        assertThat(history.getBeforeDeletedAt()).isNull();
+        assertThat(history.getAfterDeletedAt()).isNull();
+    }
+
+    private void assertSoftDeleteHistory(
+            PropertyOptionHistory history,
+            PropertyOption option,
+            String value,
+            int displayOrder
+    ) {
+        assertCommonHistory(history, option, OptionChangeType.SOFT_DELETE);
+        assertThat(history.getBeforeValue()).isEqualTo(value);
+        assertThat(history.getAfterValue()).isEqualTo(value);
+        assertThat(history.getBeforeDisplayOrder()).isEqualTo(displayOrder);
+        assertThat(history.getAfterDisplayOrder()).isEqualTo(displayOrder);
+        assertThat(history.getBeforeDeletedAt()).isNull();
+        assertThat(history.getAfterDeletedAt()).isEqualTo(option.getDeletedAt());
+    }
+
+    private void assertCommonHistory(
+            PropertyOptionHistory history,
+            PropertyOption option,
+            OptionChangeType changeType
+    ) {
+        assertThat(history.getPropertyRevisionId()).isEqualTo(REVISION_ID);
+        assertThat(history.getPropertyOptionId()).isEqualTo(option.getPropertyOptionId());
+        assertThat(history.getOptionCodeId()).isEqualTo(option.getOptionCodeId());
+        assertThat(history.getChangedFields()).isEqualTo(CHANGED_FIELDS);
+        assertThat(history.getChangeType()).isEqualTo(changeType);
+    }
+
+    private void verifyNoPersistenceInteractions() {
+        verifyNoInteractions(propertyOptionRepository, historyRepository);
     }
 }

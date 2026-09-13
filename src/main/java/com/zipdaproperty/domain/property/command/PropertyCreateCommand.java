@@ -1,11 +1,14 @@
 package com.zipdaproperty.domain.property.command;
 
+import com.zipdaproperty.domain.option.command.PropertyOptionCreateCommand;
+
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublisherType;
 import com.zipdaproperty.domain.property.constant.TransactionType;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 public record PropertyCreateCommand(
         Long regionId,
@@ -31,6 +34,9 @@ public record PropertyCreateCommand(
         Boolean hasElevator,
         Boolean isPetAllowed,
         String title,
-        String description
+        String description,
+        List<Long> fileIds,
+        PropertyAddressCommand address,
+        List<PropertyOptionCreateCommand> options
 ) {
 }

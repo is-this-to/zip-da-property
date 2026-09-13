@@ -12,7 +12,6 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -26,16 +25,6 @@ import java.util.Objects;
 @Entity
 @Table(
         name = "property_idempotency",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uq_property_idempotency_01",
-                        columnNames = {
-                                "member_id",
-                                "endpoint_key",
-                                "idempotency_key"
-                        }
-                )
-        },
         indexes = {
                 @Index(
                         name = "idx_idempotency_expires",
@@ -251,6 +240,22 @@ public class PropertyIdempotency extends BaseAuditEntity {
         );
 
         return !expiresAt.isAfter(currentTime);
+    }
+
+    public void softDelete(
+            ActorContext actorContext,
+            Instant deletedAt,
+            String deleteReason
+    ) {
+        if (isDeleted()) {
+            return;
+        }
+
+        recordDeletion(
+                actorContext,
+                deletedAt,
+                deleteReason
+        );
     }
 
     private void validateProcessingStatus() {

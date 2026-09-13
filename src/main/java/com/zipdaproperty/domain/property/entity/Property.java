@@ -1,6 +1,7 @@
 package com.zipdaproperty.domain.property.entity;
 
 import com.zipdaproperty.domain.property.command.PropertyCreateCommand;
+import com.zipdaproperty.domain.property.command.PropertyUpdateCommand;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.constant.PublisherType;
@@ -252,5 +253,96 @@ public class Property extends BaseAuditEntity {
                 command,
                 actorContext
         );
+    }
+
+    public void assignInitialRiskScore(BigDecimal riskScore) {
+        if (riskScore == null
+                || riskScore.compareTo(BigDecimal.ZERO) < 0
+                || riskScore.compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw new IllegalArgumentException(
+                    "위험점수는 0 이상 100 이하여야 합니다."
+            );
+        }
+
+        this.riskScore = riskScore;
+    }
+
+    public void update(
+            PropertyUpdateCommand command,
+            ActorContext actorContext
+    ) {
+        this.regionId = command.regionId();
+        this.apartmentComplexId = command.apartmentComplexId();
+        this.propertyType = command.propertyType();
+        this.transactionType = command.transactionType();
+        this.salePrice = command.salePrice();
+        this.deposit = command.deposit();
+        this.monthlyRent = command.monthlyRent();
+        this.maintenanceFee = command.maintenanceFee();
+        this.supplyArea = command.supplyArea();
+        this.exclusiveArea = command.exclusiveArea();
+        this.roomCount = command.roomCount();
+        this.bathroomCount = command.bathroomCount();
+        this.floor = command.floor();
+        this.totalFloor = command.totalFloor();
+        this.floorCondition = command.floorCondition();
+        this.direction = command.direction();
+        this.approvalDate = command.approvalDate();
+        this.buildingUse = command.buildingUse();
+        this.isParkingAvailable = command.isParkingAvailable();
+        this.hasElevator = command.hasElevator();
+        this.isPetAllowed = command.isPetAllowed();
+        this.title = command.title();
+        this.description = command.description();
+
+        recordUpdate(actorContext);
+    }
+
+    public void changeTransactionStatus(
+            TransactionStatus targetStatus,
+            ActorContext actorContext
+    ) {
+        this.transactionStatus = targetStatus;
+        recordUpdate(actorContext);
+    }
+
+    public void changePublicationStatus(
+            PublicationStatus targetStatus,
+            ActorContext actorContext,
+            Instant occurredAt
+    ) {
+        this.publicationStatus = targetStatus;
+
+        if (targetStatus == PublicationStatus.PUBLISHED) {
+            this.publishedAt = occurredAt;
+        }
+
+        recordUpdate(actorContext);
+    }
+
+    public void changeVerificationStatus(
+            VerificationStatus targetStatus,
+            ActorContext actorContext
+    ) {
+        this.verificationStatus = targetStatus;
+        recordUpdate(actorContext);
+    }
+
+    public void softDelete(
+            ActorContext actorContext,
+            Instant deletedAt,
+            String deleteReason
+    ) {
+        recordDeletion(
+                actorContext,
+                deletedAt,
+                deleteReason
+        );
+    }
+
+    public void restore(
+            ActorContext actorContext
+    ) {
+        recordRestoration(actorContext);
     }
 }

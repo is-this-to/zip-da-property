@@ -22,6 +22,17 @@ public class ApiResponseCustomizer implements OperationCustomizer {
             return operation;
         }
 
+        if (!"200".equals(annotation.successResponseCode())) {
+            operation.getResponses().remove("200");
+        }
+
+        operation.getResponses().addApiResponse(
+                annotation.successResponseCode(),
+                new ApiResponse().description(
+                        annotation.successDescription()
+                )
+        );
+
         Map<Integer, List<CustomResponseCode>> errorCodeMap = new HashMap<>();
 
         for(CustomResponseCode injectErrorCode : annotation.value()) {

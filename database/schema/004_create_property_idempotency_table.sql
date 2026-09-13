@@ -5,7 +5,7 @@ CREATE TABLE `property_idempotency`
     `member_id`           BIGINT       NOT NULL
         COMMENT '요청한 Member 서비스 회원 ID',
     `endpoint_key`        VARCHAR(200) NOT NULL
-        COMMENT '요청 API 식별자. 예: POST:/api/properties',
+        COMMENT '요청 API 식별자. 예: POST:/api/property/properties',
     `idempotency_key`     VARCHAR(100) NOT NULL
         COMMENT '클라이언트가 전달한 Idempotency-Key 헤더값',
     `request_hash`        CHAR(64)     NOT NULL

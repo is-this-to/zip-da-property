@@ -1,5 +1,9 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.image.service.PropertyImageLinkService;
+import com.zipdaproperty.domain.option.service.PropertyOptionCommandService;
+import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
+import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.command.PropertyCreateCommand;
 import com.zipdaproperty.domain.property.constant.PropertyStatusType;
 import com.zipdaproperty.domain.property.constant.PublisherType;
@@ -7,11 +11,18 @@ import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.entity.PropertyPublisherSnapshot;
 import com.zipdaproperty.domain.property.entity.PropertyRevision;
 import com.zipdaproperty.domain.property.entity.PropertyStatusHistory;
+import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
+import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
+import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
+import com.zipdaproperty.domain.property.member.constant.MemberPermissionAction;
+import com.zipdaproperty.domain.property.member.service.MemberWritePermissionService;
 import com.zipdaproperty.domain.property.repository.PropertyPublisherSnapshotRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
 import com.zipdaproperty.domain.property.repository.PropertyStatusHistoryRepository;
 import com.zipdaproperty.domain.property.response.PropertyCreateResponse;
+import com.zipdaproperty.domain.property.risk.model.PropertyRiskAssessmentResult;
+import com.zipdaproperty.domain.property.risk.service.PropertyRegistrationRiskService;
 import com.zipdaproperty.domain.region.repository.RegionRepository;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
@@ -24,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -65,7 +77,8 @@ public class PropertyCreateService {
             "description",
             "publicationStatus",
             "transactionStatus",
-            "verificationStatus"
+            "verificationStatus",
+            "riskScore"
     );
 
     private final PropertyRepository propertyRepository;
@@ -87,6 +100,24 @@ public class PropertyCreateService {
 
     private final ObjectMapper objectMapper;
 
+    private final PropertyImageLinkService propertyImageLinkService;
+
+    private final PropertyAuditEventRecorder
+            propertyAuditEventRecorder;
+
+    private final PropertyKafkaEventPublisher
+            propertyKafkaEventPublisher;
+
+    private final PropertyAddressService propertyAddressService;
+
+    private final MemberWritePermissionService
+            memberWritePermissionService;
+
+    private final PropertyOptionCommandService propertyOptionCommandService;
+
+    private final PropertyRegistrationRiskService
+            propertyRegistrationRiskService;
+
     @Transactional
     public PropertyCreateResponse create(
             PropertyCreateCommand command,
@@ -95,6 +126,12 @@ public class PropertyCreateService {
         validateCreatePermission(
                 command.publisherType(),
                 actorContext
+        );
+
+        memberWritePermissionService.validate(
+                actorContext.memberId(),
+                actorContext.role(),
+                MemberPermissionAction.PROPERTY_CREATE
         );
 
         validateRegion(command.regionId());
@@ -108,14 +145,49 @@ public class PropertyCreateService {
 
         Long propertyId = tsidGenerator.generate();
 
+        PreparedPropertyAddress preparedAddress =
+                propertyAddressService.prepare(
+                        propertyId,
+                        command.address()
+                );
+
+        validateRegionMatch(
+                command.regionId(),
+                preparedAddress.regionId()
+        );
+
+        PropertyRiskAssessmentResult riskAssessment =
+                propertyRegistrationRiskService.evaluateAndRecord(
+                        propertyId,
+                        command,
+                        preparedAddress,
+                        actorContext
+                );
+
+        rejectBlockedRegistration(riskAssessment);
+
         Property property = Property.create(
                 propertyId,
                 command,
                 actorContext
         );
 
+        property.assignInitialRiskScore(riskAssessment.score());
+
         Property savedProperty =
                 propertyRepository.saveAndFlush(property);
+
+        propertyImageLinkService.linkImages(
+                savedProperty.getPropertyId(),
+                command.fileIds(),
+                actorContext
+        );
+
+        propertyAddressService.create(
+                savedProperty,
+                preparedAddress,
+                actorContext
+        );
 
         Instant occurredAt = Instant.now();
 
@@ -142,6 +214,15 @@ public class PropertyCreateService {
                         propertyRevision
                 );
 
+        propertyOptionCommandService.createOptions(
+                savedProperty.getPropertyId(),
+                savedRevision.getPropertyRevisionId(),
+                savedProperty.getPropertyType(),
+                command.options(),
+                "options",
+                actorContext
+        );
+
         saveInitialStatusHistories(
                 savedProperty,
                 savedRevision,
@@ -152,6 +233,12 @@ public class PropertyCreateService {
         savePublisherSnapshot(
                 savedProperty,
                 savedRevision,
+                actorContext,
+                occurredAt
+        );
+
+        recordCreationEvents(
+                savedProperty,
                 actorContext,
                 occurredAt
         );
@@ -178,7 +265,9 @@ public class PropertyCreateService {
         boolean isAllowed = switch (actorRole) {
             case USER ->
                     publisherType
-                            == PublisherType.DIRECT_OWNER;
+                            == PublisherType.DIRECT_OWNER
+                            || publisherType
+                            == PublisherType.DIRECT_TENANT;
 
             case AGENT ->
                     publisherType
@@ -194,6 +283,24 @@ public class PropertyCreateService {
                     "요청자 역할과 등록 주체 유형이 일치하지 않습니다."
             );
         }
+    }
+
+    private void rejectBlockedRegistration(
+            PropertyRiskAssessmentResult riskAssessment
+    ) {
+        if (!riskAssessment.blocked()) {
+            return;
+        }
+
+        CustomResponseCode responseCode =
+                riskAssessment.exactDuplicateDetected()
+                        ? CustomResponseCode.PROPERTY_DUPLICATE_DETECTED
+                        : CustomResponseCode.PROPERTY_REGISTRATION_RISK_BLOCKED;
+
+        throw new BusinessException(
+                responseCode,
+                "등록 전 위험검사 결과 등록이 차단되었습니다."
+        );
     }
 
     private void validateRegion(Long regionId) {
@@ -214,6 +321,21 @@ public class PropertyCreateService {
                                         + regionId
                         )
                 );
+    }
+
+    private void validateRegionMatch(
+            Long requestedRegionId,
+            Long verifiedRegionId
+    ) {
+        if (!java.util.Objects.equals(
+                requestedRegionId,
+                verifiedRegionId
+        )) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_REQUEST,
+                    "요청 지역과 주소·좌표로 검증된 지역이 일치하지 않습니다."
+            );
+        }
     }
 
     private void saveInitialStatusHistories(
@@ -312,5 +434,200 @@ public class PropertyCreateService {
         propertyPublisherSnapshotRepository.save(
                 publisherSnapshot
         );
+    }
+
+    private void recordCreationEvents(
+            Property property,
+            ActorContext actorContext,
+            Instant occurredAt
+    ) {
+        propertyAuditEventRecorder.recordPropertyAction(
+                property.getPropertyId(),
+                PropertyAuditActionCode.PROPERTY_CREATED,
+                CREATE_REASON,
+                null,
+                occurredAt,
+                actorContext
+        );
+
+        Map<String, Object> kafkaPayload =
+                createPropertyCreatedPayload(property);
+
+        propertyKafkaEventPublisher.publishAfterCommit(
+                property.getPropertyId(),
+                property.getVersion(),
+                PropertyEventType.PROPERTY_CREATED,
+                kafkaPayload,
+                occurredAt,
+                actorContext
+        );
+    }
+
+    private Map<String, Object> createPropertyCreatedPayload(
+            Property property
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+
+        payload.put(
+                "propertyId",
+                property.getPropertyId().toString()
+        );
+
+        payload.put(
+                "version",
+                property.getVersion()
+        );
+
+        payload.put(
+                "regionId",
+                property.getRegionId().toString()
+        );
+
+        payload.put(
+                "apartmentComplexId",
+                toStringOrNull(
+                        property.getApartmentComplexId()
+                )
+        );
+
+        payload.put(
+                "authorMemberId",
+                property.getAuthorMemberId().toString()
+        );
+
+        payload.put(
+                "publisherType",
+                property.getPublisherType().name()
+        );
+
+        payload.put(
+                "propertyType",
+                property.getPropertyType().name()
+        );
+
+        payload.put(
+                "transactionType",
+                property.getTransactionType().name()
+        );
+
+        payload.put(
+                "salePrice",
+                property.getSalePrice()
+        );
+
+        payload.put(
+                "deposit",
+                property.getDeposit()
+        );
+
+        payload.put(
+                "monthlyRent",
+                property.getMonthlyRent()
+        );
+
+        payload.put(
+                "maintenanceFee",
+                property.getMaintenanceFee()
+        );
+
+        payload.put(
+                "supplyArea",
+                property.getSupplyArea()
+        );
+
+        payload.put(
+                "exclusiveArea",
+                property.getExclusiveArea()
+        );
+
+        payload.put(
+                "roomCount",
+                property.getRoomCount()
+        );
+
+        payload.put(
+                "bathroomCount",
+                property.getBathroomCount()
+        );
+
+        payload.put(
+                "floor",
+                property.getFloor()
+        );
+
+        payload.put(
+                "totalFloor",
+                property.getTotalFloor()
+        );
+
+        payload.put(
+                "floorCondition",
+                property.getFloorCondition()
+        );
+
+        payload.put(
+                "direction",
+                property.getDirection()
+        );
+
+        payload.put(
+                "approvalDate",
+                property.getApprovalDate()
+        );
+
+        payload.put(
+                "buildingUse",
+                property.getBuildingUse()
+        );
+
+        payload.put(
+                "isParkingAvailable",
+                property.getIsParkingAvailable()
+        );
+
+        payload.put(
+                "hasElevator",
+                property.getHasElevator()
+        );
+
+        payload.put(
+                "isPetAllowed",
+                property.getIsPetAllowed()
+        );
+
+        payload.put(
+                "title",
+                property.getTitle()
+        );
+
+        payload.put(
+                "description",
+                property.getDescription()
+        );
+
+        payload.put(
+                "publicationStatus",
+                property.getPublicationStatus().name()
+        );
+
+        payload.put(
+                "transactionStatus",
+                property.getTransactionStatus().name()
+        );
+
+        payload.put(
+                "verificationStatus",
+                property.getVerificationStatus().name()
+        );
+
+        return payload;
+    }
+
+    private String toStringOrNull(Long value) {
+        if (value == null) {
+            return null;
+        }
+
+        return value.toString();
     }
 }
