@@ -53,6 +53,10 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
 property:
+  list:
+    cursor:
+      secret: ${PROPERTY_LIST_CURSOR_SECRET}
+      secret-version: ${PROPERTY_LIST_CURSOR_SECRET_VERSION:v1}
   idempotency-cleanup:
     fixed-delay-ms: ${PROPERTY_IDEMPOTENCY_CLEANUP_FIXED_DELAY_MS:900000}
   file-maintenance:
