@@ -42,6 +42,18 @@ public interface PropertyFileRepository extends JpaRepository<PropertyFile, Long
               and propertyFile.deletedAt is null
             order by propertyFile.propertyFileId asc
             """)
+    List<PropertyFile> findAllForReportEvidenceLink(
+            @Param("propertyFileIds") Collection<Long> propertyFileIds
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select propertyFile
+            from PropertyFile propertyFile
+            where propertyFile.propertyFileId in :propertyFileIds
+              and propertyFile.deletedAt is null
+            order by propertyFile.propertyFileId asc
+            """)
     List<PropertyFile> findAllForVerificationEvidenceCleanup(
             @Param("propertyFileIds") Collection<Long> propertyFileIds
     );

@@ -1,12 +1,20 @@
 package com.zipdaproperty.domain.report.controller;
 
 import com.zipdaproperty.domain.report.request.PropertyReportActionRequest;
+import com.zipdaproperty.domain.report.request.PropertyReportAdminListRequest;
+import com.zipdaproperty.domain.report.request.PropertyReportAdminStatusChangeRequest;
 import com.zipdaproperty.domain.report.response.PropertyReportActionResponse;
+import com.zipdaproperty.domain.report.response.PropertyReportAdminDetailResponse;
+import com.zipdaproperty.domain.report.response.PropertyReportAdminListItemResponse;
+import com.zipdaproperty.domain.report.response.PropertyReportAdminListResponse;
+import com.zipdaproperty.domain.report.response.PropertyReportAdminStatusChangeResponse;
 import com.zipdaproperty.domain.report.service.PropertyReportActionService;
 import com.zipdaproperty.domain.report.service.PropertyReportAdminDetailService;
 import com.zipdaproperty.domain.report.service.PropertyReportAdminListService;
 import com.zipdaproperty.domain.report.service.PropertyReportAdminStatusChangeService;
 import com.zipdaproperty.domain.report.type.ReportActionCode;
+import com.zipdaproperty.domain.report.type.ReportReasonCode;
+import com.zipdaproperty.domain.report.type.ReportStatus;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,19 +25,26 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -44,6 +59,12 @@ class PropertyReportAdminControllerTest {
 
     private final PropertyReportActionService actionService =
             mock(PropertyReportActionService.class);
+    private final PropertyReportAdminListService listService =
+            mock(PropertyReportAdminListService.class);
+    private final PropertyReportAdminDetailService detailService =
+            mock(PropertyReportAdminDetailService.class);
+    private final PropertyReportAdminStatusChangeService statusChangeService =
+            mock(PropertyReportAdminStatusChangeService.class);
     private final ActorContext adminContext = ActorContext.member(
             3001L,
             ActorRole.CS_ADMIN,
@@ -56,15 +77,158 @@ class PropertyReportAdminControllerTest {
     void setUp() {
         PropertyReportAdminController controller =
                 new PropertyReportAdminController(
-                        mock(PropertyReportAdminListService.class),
-                        mock(PropertyReportAdminDetailService.class),
-                        mock(PropertyReportAdminStatusChangeService.class),
+                        listService,
+                        detailService,
+                        statusChangeService,
                         actionService
                 );
 
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(actorContextResolver())
                 .build();
+    }
+
+    @Test
+    void getReports_returnsCursorPageWithTsidStrings() throws Exception {
+        PropertyReportAdminListRequest request =
+                new PropertyReportAdminListRequest(null, 20);
+        when(listService.findReports(request, adminContext))
+                .thenReturn(new PropertyReportAdminListResponse(
+                        List.of(new PropertyReportAdminListItemResponse(
+                                REPORT_ID,
+                                PROPERTY_ID,
+                                1001L,
+                                ReportReasonCode.FALSE_INFO,
+                                ReportStatus.IN_REVIEW,
+                                new BigDecimal("42.50"),
+                                3001L,
+                                EXECUTED_AT
+                        )),
+                        "opaque-cursor",
+                        true
+                ));
+
+        mockMvc.perform(get("/api/admin/property-reports"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].reportId")
+                        .value(REPORT_ID.toString()))
+                .andExpect(jsonPath("$.data.items[0].propertyId")
+                        .value(PROPERTY_ID.toString()))
+                .andExpect(jsonPath("$.data.items[0].reporterMemberId")
+                        .value("1001"))
+                .andExpect(jsonPath("$.data.nextCursor")
+                        .value("opaque-cursor"))
+                .andExpect(jsonPath("$.data.hasNext").value(true));
+
+        verify(listService).findReports(request, adminContext);
+    }
+
+    @Test
+    void getReport_passesAuditReasonAndReturnsTsidStrings() throws Exception {
+        when(detailService.findReport(REPORT_ID, "고객 문의 확인", adminContext))
+                .thenReturn(new PropertyReportAdminDetailResponse(
+                        REPORT_ID,
+                        PROPERTY_ID,
+                        1001L,
+                        ReportReasonCode.FALSE_INFO,
+                        "허위 매물 신고 상세",
+                        ReportStatus.IN_REVIEW,
+                        new BigDecimal("42.50"),
+                        3001L,
+                        3L,
+                        EXECUTED_AT
+                ));
+
+        mockMvc.perform(get(
+                        "/api/admin/property-reports/{reportId}",
+                        REPORT_ID
+                ).header("X-Audit-Reason", "고객 문의 확인"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.reportId")
+                        .value(REPORT_ID.toString()))
+                .andExpect(jsonPath("$.data.propertyId")
+                        .value(PROPERTY_ID.toString()))
+                .andExpect(jsonPath("$.data.status").value("IN_REVIEW"))
+                .andExpect(jsonPath("$.data.version").value(3));
+
+        verify(detailService).findReport(
+                REPORT_ID,
+                "고객 문의 확인",
+                adminContext
+        );
+    }
+
+    @Test
+    void changeStatus_passesVersionAndReturnsIncrementedVersion() throws Exception {
+        PropertyReportAdminStatusChangeRequest request =
+                new PropertyReportAdminStatusChangeRequest(
+                        ReportStatus.TRIAGED,
+                        3L
+                );
+        when(statusChangeService.changeStatus(REPORT_ID, request, adminContext))
+                .thenReturn(new PropertyReportAdminStatusChangeResponse(
+                        REPORT_ID,
+                        ReportStatus.TRIAGED,
+                        4L
+                ));
+
+        mockMvc.perform(patch(
+                        "/api/admin/property-reports/{reportId}/status",
+                        REPORT_ID
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "targetStatus": "TRIAGED",
+                                  "version": 3
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.reportId")
+                        .value(REPORT_ID.toString()))
+                .andExpect(jsonPath("$.data.status").value("TRIAGED"))
+                .andExpect(jsonPath("$.data.version").value(4));
+
+        verify(statusChangeService).changeStatus(
+                REPORT_ID,
+                request,
+                adminContext
+        );
+    }
+
+    @Test
+    void reportAdminEndpoints_requireCsOrSuperAdmin() throws Exception {
+        RequestMapping requestMapping = PropertyReportAdminController.class
+                .getAnnotation(RequestMapping.class);
+        Method listMethod = PropertyReportAdminController.class.getDeclaredMethod(
+                "getReports",
+                PropertyReportAdminListRequest.class,
+                ActorContext.class
+        );
+        Method detailMethod = PropertyReportAdminController.class.getDeclaredMethod(
+                "getReport",
+                Long.class,
+                String.class,
+                ActorContext.class
+        );
+        Method statusMethod = PropertyReportAdminController.class.getDeclaredMethod(
+                "changeStatus",
+                Long.class,
+                PropertyReportAdminStatusChangeRequest.class,
+                ActorContext.class
+        );
+
+        assertThat(requestMapping.value())
+                .containsExactly("/api/admin/property-reports");
+        assertThat(listMethod.getAnnotation(GetMapping.class)).isNotNull();
+        assertThat(detailMethod.getAnnotation(GetMapping.class).value())
+                .containsExactly("/{reportId}");
+        assertThat(statusMethod.getAnnotation(PatchMapping.class).value())
+                .containsExactly("/{reportId}/status");
+        assertThat(List.of(listMethod, detailMethod, statusMethod))
+                .allSatisfy(method -> assertThat(
+                        method.getAnnotation(PreAuthorize.class).value()
+                ).isEqualTo("hasAnyRole('CS_ADMIN', 'SUPER_ADMIN')"));
     }
 
     @Test

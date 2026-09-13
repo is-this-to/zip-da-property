@@ -12,17 +12,21 @@
 3. `003_create_property_option_tables.sql`
 4. `004_create_property_idempotency_table.sql`
 5. `005_create_property_file_table.sql`
-6. `006_create_property_audit_event_table.sql`
-7. `007_create_property_verification_tables.sql`
-8. `008_create_property_address_table.sql`
-9. `009_create_property_member_integration_tables.sql`
-10. `010_add_property_tenant_verification.sql`
-11. `011_add_property_verification_expiration_index.sql`
-12. `012_add_property_verification_evidence_cleanup_indexes.sql`
-13. `013_add_property_verification_renewal_notification.sql`
-14. `014_add_property_idempotency_cleanup.sql`
-15. `015_create_property_risk_assessment_table.sql`
-16. `016_create_property_report_action_table.sql`
+6. `005_create_property_report_table.sql`
+7. `006_create_property_audit_event_table.sql`
+8. `007_create_property_image_table.sql`
+9. `007_create_property_verification_tables.sql`
+10. `008_create_property_address_table.sql`
+11. `009_create_property_member_integration_tables.sql`
+12. `010_add_property_tenant_verification.sql`
+13. `011_add_property_verification_expiration_index.sql`
+14. `012_add_property_verification_evidence_cleanup_indexes.sql`
+15. `013_add_property_verification_renewal_notification.sql`
+16. `014_add_property_idempotency_cleanup.sql`
+17. `015_create_property_risk_assessment_table.sql`
+18. `016_create_property_report_action_table.sql`
+19. `017_create_property_report_appeal_table.sql`
+20. `018_create_property_report_evidence_table.sql`
 
 ## 실행 전 확인
 

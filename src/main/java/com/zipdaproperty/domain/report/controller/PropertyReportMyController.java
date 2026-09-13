@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/me/property-reports")
+@RequestMapping("/api/property/me/property-reports")
 public class PropertyReportMyController {
 
     private final PropertyReportMyListService propertyReportMyListService;

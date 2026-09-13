@@ -1,10 +1,17 @@
 package com.zipdaproperty.domain.report.service;
 
+import com.zipdaproperty.domain.file.constant.FilePurpose;
+import com.zipdaproperty.domain.file.constant.UploadStatus;
+import com.zipdaproperty.domain.file.entity.PropertyFile;
+import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
 import com.zipdaproperty.domain.property.entity.Property;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.report.entity.PropertyReport;
+import com.zipdaproperty.domain.report.entity.PropertyReportEvidence;
+import com.zipdaproperty.domain.report.repository.PropertyReportEvidenceRepository;
 import com.zipdaproperty.domain.report.repository.PropertyReportRepository;
 import com.zipdaproperty.domain.report.response.PropertyReportCreateResponse;
+import com.zipdaproperty.domain.report.type.ReportEvidenceType;
 import com.zipdaproperty.domain.report.type.ReportReasonCode;
 import com.zipdaproperty.domain.report.type.ReportStatus;
 import com.zipdaproperty.global.context.ActorContext;
@@ -21,7 +28,9 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Instant;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,6 +49,8 @@ class PropertyReportServiceTest {
 
     private static final Long PROPERTY_ID = 884700000000000001L;
     private static final Long REPORT_ID = 884700000000000002L;
+    private static final Long FIRST_FILE_ID = 884700000000000003L;
+    private static final Long SECOND_FILE_ID = 884700000000000004L;
     private static final Long REPORTER_MEMBER_ID = 1001L;
     private static final Long INITIAL_VERSION = 0L;
     private static final String DETAIL = "허위 매물 정보가 포함되어 있어 신고합니다.";
@@ -48,6 +59,10 @@ class PropertyReportServiceTest {
             mock(PropertyReportRepository.class);
     private final PropertyRepository propertyRepository =
             mock(PropertyRepository.class);
+    private final PropertyReportEvidenceRepository evidenceRepository =
+            mock(PropertyReportEvidenceRepository.class);
+    private final PropertyFileRepository propertyFileRepository =
+            mock(PropertyFileRepository.class);
     private final TsidGenerator tsidGenerator = mock(TsidGenerator.class);
 
     private PropertyReportService service;
@@ -57,14 +72,16 @@ class PropertyReportServiceTest {
         service = new PropertyReportService(
                 propertyReportRepository,
                 propertyRepository,
+                evidenceRepository,
+                propertyFileRepository,
                 tsidGenerator
         );
 
         when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(PROPERTY_ID))
                 .thenReturn(Optional.of(mock(Property.class)));
-        when(propertyReportRepository.countDailyReportsIncludingDeleted(
-                REPORTER_MEMBER_ID
-        )).thenReturn(0L);
+        when(propertyReportRepository
+                .countDailyReportsIncludingDeleted(REPORTER_MEMBER_ID))
+                .thenReturn(0L);
         when(propertyReportRepository
                 .existsByReporterMemberIdAndPropertyIdAndReasonCodeAndStatusInAndDeletedAtIsNull(
                         anyLong(),
@@ -83,6 +100,8 @@ class PropertyReportServiceTest {
                     );
                     return report;
                 });
+        when(evidenceRepository.saveAllAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -93,6 +112,7 @@ class PropertyReportServiceTest {
                 PROPERTY_ID,
                 ReportReasonCode.FALSE_INFO,
                 DETAIL,
+                null,
                 actorContext
         );
 
@@ -116,6 +136,8 @@ class PropertyReportServiceTest {
         assertThat(response.reportId()).isEqualTo(REPORT_ID);
         assertThat(response.status()).isEqualTo(ReportStatus.RECEIVED);
         assertThat(response.version()).isEqualTo(INITIAL_VERSION);
+        verify(propertyReportRepository)
+                .countDailyReportsIncludingDeleted(REPORTER_MEMBER_ID);
     }
 
     @Test
@@ -128,6 +150,7 @@ class PropertyReportServiceTest {
                         PROPERTY_ID,
                         ReportReasonCode.DUPLICATE,
                         DETAIL,
+                        null,
                         actor(ActorRole.USER)
                 ),
                 CustomResponseCode.PROPERTY_NOT_FOUND
@@ -151,6 +174,7 @@ class PropertyReportServiceTest {
                         PROPERTY_ID,
                         ReportReasonCode.UNAVAILABLE,
                         DETAIL,
+                        null,
                         actor(ActorRole.USER)
                 ),
                 CustomResponseCode.DUPLICATE_ACTIVE_REPORT
@@ -166,14 +190,15 @@ class PropertyReportServiceTest {
     void createReport_fewerThanFiveSuccessfulReports_allowsNextReport(
             long existingDailyCount
     ) {
-        when(propertyReportRepository.countDailyReportsIncludingDeleted(
-                REPORTER_MEMBER_ID
-        )).thenReturn(existingDailyCount);
+        when(propertyReportRepository
+                .countDailyReportsIncludingDeleted(REPORTER_MEMBER_ID))
+                .thenReturn(existingDailyCount);
 
         PropertyReportCreateResponse response = service.createReport(
                 PROPERTY_ID,
                 ReportReasonCode.PRICE_MISMATCH,
                 DETAIL,
+                null,
                 actor(ActorRole.USER)
         );
 
@@ -184,15 +209,16 @@ class PropertyReportServiceTest {
 
     @Test
     void createReport_fiveSuccessfulReportsAlreadyExist_throwsRateLimited() {
-        when(propertyReportRepository.countDailyReportsIncludingDeleted(
-                REPORTER_MEMBER_ID
-        )).thenReturn(5L);
+        when(propertyReportRepository
+                .countDailyReportsIncludingDeleted(REPORTER_MEMBER_ID))
+                .thenReturn(5L);
 
         assertBusinessException(
                 () -> service.createReport(
                         PROPERTY_ID,
                         ReportReasonCode.OTHER,
                         DETAIL,
+                        null,
                         actor(ActorRole.USER)
                 ),
                 CustomResponseCode.RATE_LIMITED
@@ -216,6 +242,7 @@ class PropertyReportServiceTest {
                 PROPERTY_ID,
                 ReportReasonCode.FALSE_INFO,
                 DETAIL,
+                null,
                 actor(ActorRole.USER)
         );
 
@@ -249,6 +276,7 @@ class PropertyReportServiceTest {
                 PROPERTY_ID,
                 ReportReasonCode.OTHER,
                 DETAIL,
+                null,
                 actor(actorRole)
         );
 
@@ -271,6 +299,7 @@ class PropertyReportServiceTest {
                         PROPERTY_ID,
                         ReportReasonCode.FALSE_INFO,
                         DETAIL,
+                        null,
                         actor(ActorRole.USER)
                 ),
                 CustomResponseCode.DUPLICATE_ACTIVE_REPORT
@@ -288,8 +317,293 @@ class PropertyReportServiceTest {
                 PROPERTY_ID,
                 ReportReasonCode.FALSE_INFO,
                 DETAIL,
+                null,
                 actor(ActorRole.USER)
         )).isSameAs(unrelatedViolation);
+    }
+
+    @Test
+    void createReport_emptyEvidence_doesNotLoadOrSaveEvidence() {
+        service.createReport(
+                PROPERTY_ID,
+                ReportReasonCode.FALSE_INFO,
+                DETAIL,
+                List.of(),
+                actor(ActorRole.USER)
+        );
+
+        verifyNoInteractions(propertyFileRepository, evidenceRepository);
+    }
+
+    @Test
+    void createReport_verifiedEvidence_savesRequestOrderAndMarksFilesLinked() {
+        PropertyFile firstFile = verifiedEvidenceFile(FIRST_FILE_ID, REPORTER_MEMBER_ID);
+        PropertyFile secondFile = verifiedEvidenceFile(SECOND_FILE_ID, REPORTER_MEMBER_ID);
+        when(propertyFileRepository.findAllForReportEvidenceLink(
+                List.of(FIRST_FILE_ID, SECOND_FILE_ID)
+        )).thenReturn(List.of(firstFile, secondFile));
+
+        service.createReport(
+                PROPERTY_ID,
+                ReportReasonCode.FALSE_INFO,
+                DETAIL,
+                List.of(SECOND_FILE_ID, FIRST_FILE_ID),
+                actor(ActorRole.USER)
+        );
+
+        verify(propertyFileRepository).findAllForReportEvidenceLink(
+                List.of(FIRST_FILE_ID, SECOND_FILE_ID)
+        );
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PropertyReportEvidence>> evidenceCaptor =
+                ArgumentCaptor.forClass(List.class);
+        verify(evidenceRepository).saveAllAndFlush(evidenceCaptor.capture());
+        assertThat(evidenceCaptor.getValue())
+                .extracting(PropertyReportEvidence::getPropertyFileId)
+                .containsExactly(SECOND_FILE_ID, FIRST_FILE_ID);
+        assertThat(evidenceCaptor.getValue())
+                .extracting(PropertyReportEvidence::getSortOrder)
+                .containsExactly(0, 1);
+        assertThat(evidenceCaptor.getValue())
+                .allSatisfy(evidence -> {
+                    assertThat(evidence.getReportId()).isEqualTo(REPORT_ID);
+                    assertThat(evidence.getEvidenceType())
+                            .isEqualTo(ReportEvidenceType.SCREENSHOT);
+                });
+        assertThat(firstFile.getUploadStatus()).isEqualTo(UploadStatus.LINKED);
+        assertThat(secondFile.getUploadStatus()).isEqualTo(UploadStatus.LINKED);
+    }
+
+    @Test
+    void createReport_fiveVerifiedEvidenceFiles_savesAndLinksAllFiles() {
+        List<Long> fileIds = List.of(
+                884700000000000003L,
+                884700000000000004L,
+                884700000000000005L,
+                884700000000000006L,
+                884700000000000007L
+        );
+        List<PropertyFile> files = fileIds.stream()
+                .map(fileId -> verifiedEvidenceFile(fileId, REPORTER_MEMBER_ID))
+                .toList();
+        when(propertyFileRepository.findAllForReportEvidenceLink(fileIds))
+                .thenReturn(files);
+
+        service.createReport(
+                PROPERTY_ID,
+                ReportReasonCode.FALSE_INFO,
+                DETAIL,
+                fileIds,
+                actor(ActorRole.USER)
+        );
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PropertyReportEvidence>> evidenceCaptor =
+                ArgumentCaptor.forClass(List.class);
+        verify(evidenceRepository).saveAllAndFlush(evidenceCaptor.capture());
+        assertThat(evidenceCaptor.getValue()).hasSize(5);
+        assertThat(files)
+                .allSatisfy(file -> assertThat(file.getUploadStatus())
+                        .isEqualTo(UploadStatus.LINKED));
+    }
+
+    @Test
+    void createReport_sixEvidenceFiles_throwsInvalidRequestBeforeReportSave() {
+        assertBusinessException(
+                () -> service.createReport(
+                        PROPERTY_ID,
+                        ReportReasonCode.FALSE_INFO,
+                        DETAIL,
+                        List.of(1L, 2L, 3L, 4L, 5L, 6L),
+                        actor(ActorRole.USER)
+                ),
+                CustomResponseCode.INVALID_REQUEST
+        );
+
+        verifyNoInteractions(propertyFileRepository, evidenceRepository);
+        verify(propertyReportRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createReport_nullEvidenceFileId_throwsInvalidRequestBeforeReportSave() {
+        List<Long> evidenceFileIds = new java.util.ArrayList<>();
+        evidenceFileIds.add(FIRST_FILE_ID);
+        evidenceFileIds.add(null);
+
+        assertBusinessException(
+                () -> service.createReport(
+                        PROPERTY_ID,
+                        ReportReasonCode.FALSE_INFO,
+                        DETAIL,
+                        evidenceFileIds,
+                        actor(ActorRole.USER)
+                ),
+                CustomResponseCode.INVALID_REQUEST
+        );
+
+        verifyNoInteractions(propertyFileRepository, evidenceRepository);
+        verify(propertyReportRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createReport_duplicateEvidenceFileId_throwsInvalidRequestBeforeReportSave() {
+        assertBusinessException(
+                () -> service.createReport(
+                        PROPERTY_ID,
+                        ReportReasonCode.FALSE_INFO,
+                        DETAIL,
+                        List.of(FIRST_FILE_ID, FIRST_FILE_ID),
+                        actor(ActorRole.USER)
+                ),
+                CustomResponseCode.INVALID_REQUEST
+        );
+
+        verifyNoInteractions(propertyFileRepository, evidenceRepository);
+        verify(propertyReportRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createReport_missingOrDeletedEvidenceFile_throwsInvalidRequest() {
+        when(propertyFileRepository.findAllForReportEvidenceLink(
+                List.of(FIRST_FILE_ID)
+        )).thenReturn(List.of());
+
+        assertBusinessException(
+                () -> createReportWithEvidence(FIRST_FILE_ID),
+                CustomResponseCode.INVALID_REQUEST
+        );
+
+        verify(propertyReportRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(evidenceRepository);
+    }
+
+    @Test
+    void createReport_otherMembersEvidenceFile_throwsOwnershipRequired() {
+        PropertyFile file = verifiedEvidenceFile(FIRST_FILE_ID, 2002L);
+        stubEvidenceFiles(file);
+
+        assertBusinessException(
+                () -> createReportWithEvidence(FIRST_FILE_ID),
+                CustomResponseCode.FILE_OWNERSHIP_REQUIRED
+        );
+
+        assertThat(file.getUploadStatus()).isEqualTo(UploadStatus.VERIFIED);
+        verify(propertyReportRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createReport_wrongPurposeEvidenceFile_throwsInvalidRequest() {
+        PropertyFile file = verifiedFile(
+                FIRST_FILE_ID,
+                REPORTER_MEMBER_ID,
+                FilePurpose.PROPERTY_IMAGE
+        );
+        stubEvidenceFiles(file);
+
+        assertBusinessException(
+                () -> createReportWithEvidence(FIRST_FILE_ID),
+                CustomResponseCode.INVALID_REQUEST
+        );
+
+        assertThat(file.getUploadStatus()).isEqualTo(UploadStatus.VERIFIED);
+        verify(propertyReportRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createReport_createdEvidenceFile_throwsInvalidRequest() {
+        PropertyFile file = evidenceFile(FIRST_FILE_ID, REPORTER_MEMBER_ID);
+        stubEvidenceFiles(file);
+
+        assertBusinessException(
+                () -> createReportWithEvidence(FIRST_FILE_ID),
+                CustomResponseCode.INVALID_REQUEST
+        );
+
+        assertThat(file.getUploadStatus()).isEqualTo(UploadStatus.CREATED);
+        verify(propertyReportRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createReport_linkedEvidenceFile_throwsInvalidRequest() {
+        PropertyFile file = verifiedEvidenceFile(FIRST_FILE_ID, REPORTER_MEMBER_ID);
+        file.markLinked(actor(ActorRole.USER));
+        stubEvidenceFiles(file);
+
+        assertBusinessException(
+                () -> createReportWithEvidence(FIRST_FILE_ID),
+                CustomResponseCode.INVALID_REQUEST
+        );
+
+        verify(propertyReportRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createReport_evidenceSaveFailure_doesNotMarkFileLinked() {
+        PropertyFile file = verifiedEvidenceFile(FIRST_FILE_ID, REPORTER_MEMBER_ID);
+        stubEvidenceFiles(file);
+        DataIntegrityViolationException failure =
+                new DataIntegrityViolationException("evidence save failed");
+        when(evidenceRepository.saveAllAndFlush(any())).thenThrow(failure);
+
+        assertThatThrownBy(() -> createReportWithEvidence(FIRST_FILE_ID))
+                .isSameAs(failure);
+
+        assertThat(file.getUploadStatus()).isEqualTo(UploadStatus.VERIFIED);
+    }
+
+    private void createReportWithEvidence(Long fileId) {
+        service.createReport(
+                PROPERTY_ID,
+                ReportReasonCode.FALSE_INFO,
+                DETAIL,
+                List.of(fileId),
+                actor(ActorRole.USER)
+        );
+    }
+
+    private void stubEvidenceFiles(PropertyFile... files) {
+        when(propertyFileRepository.findAllForReportEvidenceLink(
+                List.of(FIRST_FILE_ID)
+        )).thenReturn(List.of(files));
+    }
+
+    private PropertyFile verifiedEvidenceFile(Long fileId, Long ownerMemberId) {
+        return verifiedFile(fileId, ownerMemberId, FilePurpose.REPORT_EVIDENCE);
+    }
+
+    private PropertyFile verifiedFile(
+            Long fileId,
+            Long ownerMemberId,
+            FilePurpose filePurpose
+    ) {
+        PropertyFile file = evidenceFile(fileId, ownerMemberId, filePurpose);
+        file.complete(
+                "a".repeat(64),
+                "image/jpeg",
+                ActorContext.member(ownerMemberId, ActorRole.USER, "report-evidence-test")
+        );
+        return file;
+    }
+
+    private PropertyFile evidenceFile(Long fileId, Long ownerMemberId) {
+        return evidenceFile(fileId, ownerMemberId, FilePurpose.REPORT_EVIDENCE);
+    }
+
+    private PropertyFile evidenceFile(
+            Long fileId,
+            Long ownerMemberId,
+            FilePurpose filePurpose
+    ) {
+        return PropertyFile.create(
+                fileId,
+                "report-evidence-session",
+                filePurpose,
+                "evidence.jpg",
+                1024L,
+                "report/evidence/" + fileId,
+                Instant.parse("2026-09-15T00:00:00Z"),
+                ActorContext.member(ownerMemberId, ActorRole.USER, "report-evidence-test")
+        );
     }
 
     private ActorContext actor(ActorRole role) {

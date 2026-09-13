@@ -1,9 +1,15 @@
 package com.zipdaproperty.domain.report.service;
 
+import com.zipdaproperty.domain.file.constant.FilePurpose;
+import com.zipdaproperty.domain.file.entity.PropertyFile;
+import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.report.entity.PropertyReport;
+import com.zipdaproperty.domain.report.entity.PropertyReportEvidence;
+import com.zipdaproperty.domain.report.repository.PropertyReportEvidenceRepository;
 import com.zipdaproperty.domain.report.repository.PropertyReportRepository;
 import com.zipdaproperty.domain.report.response.PropertyReportCreateResponse;
+import com.zipdaproperty.domain.report.type.ReportEvidenceType;
 import com.zipdaproperty.domain.report.type.ReportReasonCode;
 import com.zipdaproperty.domain.report.type.ReportStatus;
 import com.zipdaproperty.global.context.ActorContext;
@@ -18,13 +24,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
 public class PropertyReportService {
 
-    private static final long DAILY_REPORT_LIMIT = 5L;
+    private static final int DAILY_REPORT_LIMIT = 5;
+    private static final int MAX_EVIDENCE_FILE_COUNT = 5;
 
     private static final String ACTIVE_REPORT_UNIQUE_CONSTRAINT =
             "uq_property_report_01";
@@ -41,6 +53,8 @@ public class PropertyReportService {
 
     private final PropertyReportRepository propertyReportRepository;
     private final PropertyRepository propertyRepository;
+    private final PropertyReportEvidenceRepository evidenceRepository;
+    private final PropertyFileRepository propertyFileRepository;
     private final TsidGenerator tsidGenerator;
 
     @Transactional
@@ -48,6 +62,7 @@ public class PropertyReportService {
             Long propertyId,
             ReportReasonCode reasonCode,
             String detail,
+            List<Long> evidenceFileIds,
             ActorContext actorContext
     ) {
         validateReportActor(actorContext);
@@ -62,7 +77,6 @@ public class PropertyReportService {
 
         long dailyReportCount = propertyReportRepository
                 .countDailyReportsIncludingDeleted(reporterMemberId);
-
         if (dailyReportCount >= DAILY_REPORT_LIMIT) {
             throw new BusinessException(
                     CustomResponseCode.RATE_LIMITED,
@@ -86,6 +100,11 @@ public class PropertyReportService {
             );
         }
 
+        List<PropertyFile> evidenceFiles = validateEvidenceFiles(
+                evidenceFileIds,
+                actorContext
+        );
+
         PropertyReport propertyReport = PropertyReport.create(
                 tsidGenerator.generate(),
                 propertyId,
@@ -96,12 +115,106 @@ public class PropertyReportService {
         );
 
         PropertyReport savedReport = saveReport(propertyReport);
+        saveEvidence(
+                savedReport.getReportId(),
+                evidenceFiles,
+                actorContext
+        );
+        evidenceFiles.forEach(file -> file.markLinked(actorContext));
 
         return new PropertyReportCreateResponse(
                 savedReport.getReportId(),
                 savedReport.getStatus(),
                 savedReport.getVersion()
         );
+    }
+
+    private List<PropertyFile> validateEvidenceFiles(
+            List<Long> evidenceFileIds,
+            ActorContext actorContext
+    ) {
+        if (evidenceFileIds == null || evidenceFileIds.isEmpty()) {
+            return List.of();
+        }
+        if (evidenceFileIds.size() > MAX_EVIDENCE_FILE_COUNT) {
+            throw invalidEvidence("신고 증빙 파일은 최대 5개까지 등록할 수 있습니다.");
+        }
+
+        LinkedHashSet<Long> uniqueFileIds = new LinkedHashSet<>();
+        for (Long fileId : evidenceFileIds) {
+            if (fileId == null) {
+                throw invalidEvidence("증빙 파일 ID는 null일 수 없습니다.");
+            }
+            if (!uniqueFileIds.add(fileId)) {
+                throw invalidEvidence("같은 증빙 파일을 중복으로 등록할 수 없습니다.");
+            }
+        }
+
+        List<Long> lockOrderedFileIds = uniqueFileIds.stream()
+                .sorted()
+                .toList();
+        List<PropertyFile> files = propertyFileRepository
+                .findAllForReportEvidenceLink(lockOrderedFileIds);
+        if (files.size() != uniqueFileIds.size()) {
+            throw invalidEvidence("신고 증빙 파일을 찾을 수 없습니다.");
+        }
+
+        for (PropertyFile file : files) {
+            validateEvidenceFile(file, actorContext);
+        }
+
+        Map<Long, PropertyFile> filesById = files.stream()
+                .collect(Collectors.toMap(
+                        PropertyFile::getPropertyFileId,
+                        Function.identity()
+                ));
+        return evidenceFileIds.stream()
+                .map(filesById::get)
+                .toList();
+    }
+
+    private void validateEvidenceFile(
+            PropertyFile file,
+            ActorContext actorContext
+    ) {
+        if (!file.getOwnerMemberId().equals(actorContext.memberId())) {
+            throw new BusinessException(
+                    CustomResponseCode.FILE_OWNERSHIP_REQUIRED,
+                    "본인이 업로드한 신고 증빙 파일만 연결할 수 있습니다."
+            );
+        }
+        if (file.getFilePurpose() != FilePurpose.REPORT_EVIDENCE) {
+            throw invalidEvidence("신고 증빙 용도로 업로드한 파일만 연결할 수 있습니다.");
+        }
+        if (!file.isReadyToLink()) {
+            throw invalidEvidence("VERIFIED 상태의 신고 증빙 파일만 연결할 수 있습니다.");
+        }
+    }
+
+    private void saveEvidence(
+            Long reportId,
+            List<PropertyFile> evidenceFiles,
+            ActorContext actorContext
+    ) {
+        if (evidenceFiles.isEmpty()) {
+            return;
+        }
+
+        List<PropertyReportEvidence> evidence = IntStream
+                .range(0, evidenceFiles.size())
+                .mapToObj(index -> PropertyReportEvidence.create(
+                        reportId,
+                        evidenceFiles.get(index).getPropertyFileId(),
+                        ReportEvidenceType.SCREENSHOT,
+                        index,
+                        actorContext
+                ))
+                .toList();
+        evidenceRepository.saveAllAndFlush(evidence);
+    }
+
+    private BusinessException invalidEvidence(String message) {
+        return new BusinessException(CustomResponseCode.INVALID_REQUEST, message);
     }
 
     private PropertyReport saveReport(PropertyReport propertyReport) {

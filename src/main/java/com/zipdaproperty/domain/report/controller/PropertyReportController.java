@@ -38,6 +38,7 @@ public class PropertyReportController {
             CustomResponseCode.PROPERTY_NOT_FOUND,
             CustomResponseCode.DUPLICATE_ACTIVE_REPORT,
             CustomResponseCode.RATE_LIMITED,
+            CustomResponseCode.FILE_OWNERSHIP_REQUIRED,
             CustomResponseCode.METHOD_NOT_ALLOWED,
             CustomResponseCode.DB_ERROR,
             CustomResponseCode.SYSTEM_ERROR
@@ -57,6 +58,7 @@ public class PropertyReportController {
                         propertyId,
                         request.reasonCode(),
                         request.detail(),
+                        request.evidenceFileIds(),
                         actorContext
                 );
 
