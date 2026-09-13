@@ -114,6 +114,10 @@ public enum CustomResponseCode {
             HttpStatus.TOO_MANY_REQUESTS,
             "P33"
     ),
+    AUDIT_REASON_REQUIRED(
+            HttpStatus.BAD_REQUEST,
+            "P34"
+    ),
 
     // 매물 소유·중개 검증 관련
     PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS(
