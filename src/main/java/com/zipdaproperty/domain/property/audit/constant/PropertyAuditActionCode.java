@@ -40,6 +40,9 @@ public final class PropertyAuditActionCode {
     public static final String PROPERTY_REPORT_DETAIL_VIEWED =
             "PROPERTY_REPORT_DETAIL_VIEWED";
 
+    public static final String PROPERTY_REPORT_STATUS_CHANGED =
+            "PROPERTY_REPORT_STATUS_CHANGED";
+
     private PropertyAuditActionCode() {
     }
 }

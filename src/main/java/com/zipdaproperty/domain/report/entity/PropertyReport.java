@@ -16,6 +16,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.Objects;
 
 @Getter
 @Entity
@@ -126,5 +127,16 @@ public class PropertyReport extends BaseAuditEntity {
                 detail,
                 actorContext
         );
+    }
+
+    public void changeStatus(
+            ReportStatus targetStatus,
+            ActorContext actorContext
+    ) {
+        this.status = Objects.requireNonNull(
+                targetStatus,
+                "변경할 신고 상태는 필수입니다."
+        );
+        recordUpdate(actorContext);
     }
 }

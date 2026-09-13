@@ -118,6 +118,10 @@ public enum CustomResponseCode {
             HttpStatus.BAD_REQUEST,
             "P34"
     ),
+    INVALID_REPORT_TRANSITION(
+            HttpStatus.CONFLICT,
+            "P35"
+    ),
 
     // 매물 소유·중개 검증 관련
     PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS(

@@ -1,10 +1,13 @@
 package com.zipdaproperty.domain.report.controller;
 
 import com.zipdaproperty.domain.report.request.PropertyReportAdminListRequest;
+import com.zipdaproperty.domain.report.request.PropertyReportAdminStatusChangeRequest;
 import com.zipdaproperty.domain.report.response.PropertyReportAdminDetailResponse;
 import com.zipdaproperty.domain.report.response.PropertyReportAdminListResponse;
+import com.zipdaproperty.domain.report.response.PropertyReportAdminStatusChangeResponse;
 import com.zipdaproperty.domain.report.service.PropertyReportAdminDetailService;
 import com.zipdaproperty.domain.report.service.PropertyReportAdminListService;
+import com.zipdaproperty.domain.report.service.PropertyReportAdminStatusChangeService;
 import com.zipdaproperty.global.config.openapi.CustomApiResponse;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.response.GlobalResponseDTO;
@@ -19,7 +22,9 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,6 +36,7 @@ public class PropertyReportAdminController {
 
     private final PropertyReportAdminListService propertyReportAdminListService;
     private final PropertyReportAdminDetailService propertyReportAdminDetailService;
+    private final PropertyReportAdminStatusChangeService propertyReportAdminStatusChangeService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('CS_ADMIN', 'SUPER_ADMIN')")
@@ -77,6 +83,38 @@ public class PropertyReportAdminController {
                 propertyReportAdminDetailService.findReport(
                         reportId,
                         auditReason,
+                        actorContext
+                );
+
+        return ResponseEntity.ok(GlobalResponseDTO.success(response));
+    }
+
+    @PatchMapping("/{reportId}/status")
+    @PreAuthorize("hasAnyRole('CS_ADMIN', 'SUPER_ADMIN')")
+    @CustomApiResponse({
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.UNAUTHENTICATED,
+            CustomResponseCode.FORBIDDEN,
+            CustomResponseCode.NOT_FOUND_RESOURCE,
+            CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.INVALID_REPORT_TRANSITION,
+            CustomResponseCode.METHOD_NOT_ALLOWED,
+            CustomResponseCode.DB_ERROR,
+            CustomResponseCode.SYSTEM_ERROR
+    })
+    public ResponseEntity<GlobalResponseDTO<PropertyReportAdminStatusChangeResponse>> changeStatus(
+            @PathVariable
+            @Positive(message = "신고 ID는 0보다 커야 합니다.")
+            Long reportId,
+            @Valid @RequestBody
+            PropertyReportAdminStatusChangeRequest request,
+            @Parameter(hidden = true)
+            ActorContext actorContext
+    ) {
+        PropertyReportAdminStatusChangeResponse response =
+                propertyReportAdminStatusChangeService.changeStatus(
+                        reportId,
+                        request,
                         actorContext
                 );
 

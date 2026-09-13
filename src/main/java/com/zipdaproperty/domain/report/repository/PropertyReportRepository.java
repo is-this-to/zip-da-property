@@ -8,9 +8,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
+import java.util.Optional;
 
 public interface PropertyReportRepository
         extends JpaRepository<PropertyReport, Long> {
+
+    Optional<PropertyReport> findByReportIdAndDeletedAtIsNull(Long reportId);
 
     boolean existsByReporterMemberIdAndPropertyIdAndReasonCodeAndStatusInAndDeletedAtIsNull(
             Long reporterMemberId,
