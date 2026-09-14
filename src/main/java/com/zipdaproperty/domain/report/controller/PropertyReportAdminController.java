@@ -137,6 +137,7 @@ public class PropertyReportAdminController {
             CustomResponseCode.PROPERTY_NOT_FOUND,
             CustomResponseCode.INVALID_STATUS_TRANSITION,
             CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.MEMBER_API_UNAVAILABLE,
             CustomResponseCode.METHOD_NOT_ALLOWED,
             CustomResponseCode.DB_ERROR,
             CustomResponseCode.SYSTEM_ERROR
