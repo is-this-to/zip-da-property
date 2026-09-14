@@ -4,6 +4,7 @@ import com.zipdaproperty.domain.image.entity.PropertyImage;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Collection;
 
 public interface PropertyImageRepository
         extends JpaRepository<PropertyImage, Long> {
@@ -20,5 +21,10 @@ public interface PropertyImageRepository
     List<PropertyImage>
     findAllByPropertyIdAndDeletedAtIsNullOrderBySortOrderAsc(
             Long propertyId
+    );
+
+    List<PropertyImage>
+    findAllByPropertyIdInAndIsRepresentativeTrueAndDeletedAtIsNull(
+            Collection<Long> propertyIds
     );
 }
