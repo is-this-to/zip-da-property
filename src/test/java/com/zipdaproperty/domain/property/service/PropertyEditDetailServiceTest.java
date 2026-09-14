@@ -7,6 +7,9 @@ import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
 import com.zipdaproperty.domain.file.storage.MinioPresignedGetUrlGenerator;
 import com.zipdaproperty.domain.image.entity.PropertyImage;
 import com.zipdaproperty.domain.image.repository.PropertyImageRepository;
+import com.zipdaproperty.domain.option.response.PropertyEditOptionResponse;
+import com.zipdaproperty.domain.option.service.PropertyOptionQueryService;
+import com.zipdaproperty.domain.option.type.OptionCategory;
 import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.constant.PublisherType;
@@ -14,6 +17,8 @@ import com.zipdaproperty.domain.property.constant.TransactionStatus;
 import com.zipdaproperty.domain.property.constant.TransactionType;
 import com.zipdaproperty.domain.property.constant.VerificationStatus;
 import com.zipdaproperty.domain.property.entity.Property;
+import com.zipdaproperty.domain.property.entity.PropertyAddress;
+import com.zipdaproperty.domain.property.repository.PropertyAddressRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
 import com.zipdaproperty.domain.property.response.PropertyEditDetailResponse;
 import com.zipdaproperty.domain.property.response.PropertyEditImageResponse;
@@ -22,6 +27,10 @@ import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.Point;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -62,13 +71,21 @@ class PropertyEditDetailServiceTest {
     private final MinioPresignedGetUrlGenerator getUrlGenerator =
             mock(MinioPresignedGetUrlGenerator.class);
 
+    private final PropertyAddressRepository propertyAddressRepository =
+            mock(PropertyAddressRepository.class);
+
+    private final PropertyOptionQueryService propertyOptionQueryService =
+            mock(PropertyOptionQueryService.class);
+
     private final PropertyEditDetailService
             propertyEditDetailService =
             new PropertyEditDetailService(
                     propertyRepository,
                     propertyImageRepository,
                     propertyFileRepository,
-                    getUrlGenerator
+                    getUrlGenerator,
+                    propertyAddressRepository,
+                    propertyOptionQueryService
             );
 
     private final ActorContext authorContext =
@@ -77,6 +94,33 @@ class PropertyEditDetailServiceTest {
                     ActorRole.USER,
                     "property-edit-detail-author-test"
             );
+
+    @BeforeEach
+    void setUpEditDependencies() {
+        PropertyAddress address = mock(PropertyAddress.class);
+        Point exactLocation = new GeometryFactory().createPoint(
+                new Coordinate(127.123456, 37.654321)
+        );
+        exactLocation.setSRID(4326);
+        when(address.getExactRoadAddress()).thenReturn("서울시 강남구 테헤란로 1");
+        when(address.getExactJibunAddress()).thenReturn("서울시 강남구 역삼동 1");
+        when(address.getLegalDongCode()).thenReturn("1168010100");
+        when(address.getExactLocation()).thenReturn(exactLocation);
+        when(propertyAddressRepository
+                .findByProperty_PropertyIdAndDeletedAtIsNull(PROPERTY_ID))
+                .thenReturn(Optional.of(address));
+        when(propertyOptionQueryService.getEditOptions(
+                PROPERTY_ID,
+                PropertyType.APARTMENT
+        )).thenReturn(List.of(new PropertyEditOptionResponse(
+                "ELEVATOR",
+                "엘리베이터",
+                OptionCategory.STRUCTURE,
+                "true",
+                false,
+                1
+        )));
+    }
 
     @Test
     void getEditDetail_author_returnsCurrentPropertyData() {
@@ -132,6 +176,19 @@ class PropertyEditDetailServiceTest {
                 .isEqualTo(VerificationStatus.UNVERIFIED);
 
         assertThat(response.images()).isEmpty();
+        assertThat(response.address().roadAddress())
+                .isEqualTo("서울시 강남구 테헤란로 1");
+        assertThat(response.address().jibunAddress())
+                .isEqualTo("서울시 강남구 역삼동 1");
+        assertThat(response.address().legalDongCode())
+                .isEqualTo("1168010100");
+        assertThat(response.address().longitude())
+                .isEqualByComparingTo("127.123456");
+        assertThat(response.address().latitude())
+                .isEqualByComparingTo("37.654321");
+        assertThat(response.options())
+                .extracting(PropertyEditOptionResponse::optionCode)
+                .containsExactly("ELEVATOR");
         verifyNoInteractions(
                 propertyFileRepository,
                 getUrlGenerator

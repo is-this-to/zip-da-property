@@ -13,6 +13,7 @@ import com.zipdaproperty.global.context.constant.ActorRole;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -80,6 +81,39 @@ class PropertyPublicImageServiceTest {
 
         assertThat(service.findImages(PROPERTY_ID)).isEmpty();
         verifyNoInteractions(getUrlGenerator);
+    }
+
+    @Test
+    void findRepresentativeImageUrls_returnsEligibleImagesInOneBatch() {
+        Long secondPropertyId = 884685586571263702L;
+        PropertyImage first = PropertyImage.create(
+                PROPERTY_ID, 101L, 0, true, null, actorContext()
+        );
+        PropertyImage second = PropertyImage.create(
+                secondPropertyId, 102L, 0, true, null, actorContext()
+        );
+        PropertyFile firstFile = linkedImageFile(101L, "property/101.jpg");
+        PropertyFile secondFile = linkedImageFile(102L, "property/102.jpg");
+        when(imageRepository
+                .findAllByPropertyIdInAndIsRepresentativeTrueAndDeletedAtIsNull(
+                        List.of(PROPERTY_ID, secondPropertyId)
+                )).thenReturn(List.of(first, second));
+        when(fileRepository.findAllByPropertyFileIdInAndDeletedAtIsNull(
+                List.of(101L, 102L)
+        )).thenReturn(List.of(firstFile, secondFile));
+        when(getUrlGenerator.generate("property/101.jpg"))
+                .thenReturn("https://example.test/101");
+        when(getUrlGenerator.generate("property/102.jpg"))
+                .thenReturn("https://example.test/102");
+
+        Map<Long, String> urls = service.findRepresentativeImageUrls(
+                List.of(PROPERTY_ID, secondPropertyId)
+        );
+
+        assertThat(urls).containsExactlyInAnyOrderEntriesOf(Map.of(
+                PROPERTY_ID, "https://example.test/101",
+                secondPropertyId, "https://example.test/102"
+        ));
     }
 
     private PropertyFile linkedImageFile(Long fileId, String objectKey) {

@@ -8,12 +8,14 @@ import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
+import com.zipdaproperty.domain.property.service.PropertyPublicImageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -21,6 +23,7 @@ public class PropertyFavoriteService {
 
     private final PropertyFavoriteCommandService propertyFavoriteCommandService;
     private final PropertyFavoriteListQueryRepository propertyFavoriteListQueryRepository;
+    private final PropertyPublicImageService propertyPublicImageService;
 
     public PropertyFavoriteUpdateResponse updateFavorite(
             Long propertyId,
@@ -66,9 +69,17 @@ public class PropertyFavoriteService {
                 );
 
         boolean hasNext = rows.size() > size;
-        List<PropertyFavoriteListResponse.Item> items = rows.stream()
+        List<PropertyFavoriteListQueryRow> visibleRows = rows.stream()
                 .limit(size)
-                .map(this::toItem)
+                .toList();
+        Map<Long, String> representativeImageUrls =
+                propertyPublicImageService.findRepresentativeImageUrls(
+                        visibleRows.stream()
+                                .map(PropertyFavoriteListQueryRow::propertyId)
+                                .toList()
+                );
+        List<PropertyFavoriteListResponse.Item> items = visibleRows.stream()
+                .map(row -> toItem(row, representativeImageUrls))
                 .toList();
         Integer nextCursor = hasNext
                 ? nextCursor(cursor)
@@ -82,11 +93,12 @@ public class PropertyFavoriteService {
     }
 
     private PropertyFavoriteListResponse.Item toItem(
-            PropertyFavoriteListQueryRow row
+            PropertyFavoriteListQueryRow row,
+            Map<Long, String> representativeImageUrls
     ) {
         return new PropertyFavoriteListResponse.Item(
                 row.propertyId(),
-                null,
+                representativeImageUrls.get(row.propertyId()),
                 row.propertyType(),
                 row.transactionType(),
                 new PropertyFavoriteListResponse.Price(

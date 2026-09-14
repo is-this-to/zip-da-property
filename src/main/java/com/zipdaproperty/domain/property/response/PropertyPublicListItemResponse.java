@@ -22,6 +22,9 @@ public record PropertyPublicListItemResponse(
         PublisherType publisherType,
         String publicAddress,
         double latitude,
-        double longitude
+        double longitude,
+        String representativeImageUrl,
+        long favoriteCount,
+        boolean isFavorite
 ) {
 }

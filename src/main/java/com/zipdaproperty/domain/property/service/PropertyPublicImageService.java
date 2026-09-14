@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Collection;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -53,6 +54,46 @@ public class PropertyPublicImageService {
                         activeFiles.get(image.getPropertyFileId())
                 ))
                 .toList();
+    }
+
+    public Map<Long, String> findRepresentativeImageUrls(
+            Collection<Long> propertyIds
+    ) {
+        if (propertyIds == null || propertyIds.isEmpty()) {
+            return Map.of();
+        }
+
+        List<PropertyImage> representativeImages = propertyImageRepository
+                .findAllByPropertyIdInAndIsRepresentativeTrueAndDeletedAtIsNull(
+                        propertyIds
+                );
+        if (representativeImages.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, PropertyFile> activeFiles = propertyFileRepository
+                .findAllByPropertyFileIdInAndDeletedAtIsNull(
+                        representativeImages.stream()
+                                .map(PropertyImage::getPropertyFileId)
+                                .toList()
+                )
+                .stream()
+                .collect(Collectors.toMap(
+                        PropertyFile::getPropertyFileId,
+                        Function.identity()
+                ));
+
+        return representativeImages.stream()
+                .filter(image -> isAvailableImageFile(
+                        activeFiles.get(image.getPropertyFileId())
+                ))
+                .collect(Collectors.toUnmodifiableMap(
+                        PropertyImage::getPropertyId,
+                        image -> getUrlGenerator.generate(
+                                activeFiles.get(image.getPropertyFileId())
+                                        .getObjectKey()
+                        )
+                ));
     }
 
     private boolean isAvailableImageFile(PropertyFile propertyFile) {

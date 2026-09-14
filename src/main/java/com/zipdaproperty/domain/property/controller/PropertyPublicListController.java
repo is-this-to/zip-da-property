@@ -6,6 +6,7 @@ import com.zipdaproperty.domain.property.service.PropertyPublicListService;
 import com.zipdaproperty.global.config.openapi.CustomApiResponse;
 import com.zipdaproperty.global.response.GlobalResponseDTO;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
+import com.zipdaproperty.global.context.constant.InternalHeaderName;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -16,6 +17,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestHeader;
+import jakarta.validation.constraints.Positive;
 
 @Tag(name = "Property Public List API", description = "공개 매물 목록 커서 조회 API")
 @RestController
@@ -36,10 +39,18 @@ public class PropertyPublicListController {
     })
     @GetMapping
     public ResponseEntity<GlobalResponseDTO<PropertyPublicListResponse>> findProperties(
-            @Valid @ParameterObject @ModelAttribute PropertyPublicListRequest request
+            @Valid @ParameterObject @ModelAttribute PropertyPublicListRequest request,
+            @RequestHeader(
+                    value = InternalHeaderName.X_USER_ID,
+                    required = false
+            )
+            @Positive(message = "회원 ID는 0보다 커야 합니다.")
+            Long memberId
     ) {
         return ResponseEntity.ok(
-                GlobalResponseDTO.success(propertyPublicListService.findProperties(request))
+                GlobalResponseDTO.success(
+                        propertyPublicListService.findProperties(request, memberId)
+                )
         );
     }
 }

@@ -9,6 +9,7 @@ import com.zipdaproperty.domain.property.repository.PropertyPublicListQueryRepos
 import com.zipdaproperty.domain.property.repository.PropertyPublicListQueryRow;
 import com.zipdaproperty.domain.property.request.PropertyPublicListRequest;
 import com.zipdaproperty.domain.property.response.PropertyPublicListResponse;
+import com.zipdaproperty.domain.favorite.repository.PropertyFavoriteListQueryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +22,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -34,12 +37,20 @@ class PropertyPublicListServiceTest {
     @Mock PropertyPublicListQueryRepository repository;
     @Mock PropertyPublicListCursorCodec codec;
     @Mock PropertyListSearchContextHasher hasher;
+    @Mock PropertyPublicImageService imageService;
+    @Mock PropertyFavoriteListQueryRepository favoriteQueryRepository;
 
     private PropertyPublicListService service;
 
     @BeforeEach
     void setUp() {
-        service = new PropertyPublicListService(repository, codec, hasher);
+        service = new PropertyPublicListService(
+                repository,
+                codec,
+                hasher,
+                imageService,
+                favoriteQueryRepository
+        );
     }
 
     @Test
@@ -51,13 +62,29 @@ class PropertyPublicListServiceTest {
                 .thenReturn(List.of(row(3L), row(2L), row(1L)));
         when(codec.encode(any(PropertyPublicListCursor.class))).thenReturn("next");
 
-        PropertyPublicListResponse response = service.findProperties(request);
+        when(imageService.findRepresentativeImageUrls(List.of(3L, 2L)))
+                .thenReturn(Map.of(3L, "https://example.test/3"));
+        when(favoriteQueryRepository.countByPropertyIds(List.of(3L, 2L)))
+                .thenReturn(Map.of(3L, 7L, 2L, 2L));
+        when(favoriteQueryRepository.findFavoritePropertyIds(
+                1001L,
+                List.of(3L, 2L)
+        )).thenReturn(Set.of(3L));
+
+        PropertyPublicListResponse response = service.findProperties(request, 1001L);
 
         assertThat(response.items()).hasSize(2);
         assertThat(response.hasNext()).isTrue();
         assertThat(response.nextCursor()).isEqualTo("next");
         assertThat(response.items().getFirst().latitude()).isEqualTo(37.5);
         assertThat(response.items().getFirst().longitude()).isEqualTo(127.0);
+        assertThat(response.items().getFirst().representativeImageUrl())
+                .isEqualTo("https://example.test/3");
+        assertThat(response.items().getFirst().favoriteCount()).isEqualTo(7L);
+        assertThat(response.items().getFirst().isFavorite()).isTrue();
+        assertThat(response.items().get(1).representativeImageUrl()).isNull();
+        assertThat(response.items().get(1).favoriteCount()).isEqualTo(2L);
+        assertThat(response.items().get(1).isFavorite()).isFalse();
         verify(repository).findPublicProperties(any(), any(), eq(null), eq(3));
     }
 
@@ -69,10 +96,17 @@ class PropertyPublicListServiceTest {
         when(repository.findPublicProperties(any(), any(), eq(null), eq(3)))
                 .thenReturn(List.of(row(1L)));
 
-        PropertyPublicListResponse response = service.findProperties(request);
+        when(imageService.findRepresentativeImageUrls(List.of(1L)))
+                .thenReturn(Map.of());
+        when(favoriteQueryRepository.countByPropertyIds(List.of(1L)))
+                .thenReturn(Map.of());
+
+        PropertyPublicListResponse response = service.findProperties(request, null);
 
         assertThat(response.hasNext()).isFalse();
         assertThat(response.nextCursor()).isNull();
+        assertThat(response.items().getFirst().favoriteCount()).isZero();
+        assertThat(response.items().getFirst().isFavorite()).isFalse();
     }
 
     private PropertyPublicListRequest request(int size) {

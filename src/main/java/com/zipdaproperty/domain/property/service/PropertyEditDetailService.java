@@ -8,13 +8,17 @@ import com.zipdaproperty.domain.file.storage.MinioPresignedGetUrlGenerator;
 import com.zipdaproperty.domain.image.entity.PropertyImage;
 import com.zipdaproperty.domain.image.repository.PropertyImageRepository;
 import com.zipdaproperty.domain.property.entity.Property;
+import com.zipdaproperty.domain.property.entity.PropertyAddress;
+import com.zipdaproperty.domain.property.repository.PropertyAddressRepository;
 import com.zipdaproperty.domain.property.repository.PropertyRepository;
+import com.zipdaproperty.domain.property.response.PropertyEditAddressResponse;
 import com.zipdaproperty.domain.property.response.PropertyEditDetailResponse;
 import com.zipdaproperty.domain.property.response.PropertyEditImageResponse;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
+import com.zipdaproperty.domain.option.service.PropertyOptionQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +37,8 @@ public class PropertyEditDetailService {
     private final PropertyImageRepository propertyImageRepository;
     private final PropertyFileRepository propertyFileRepository;
     private final MinioPresignedGetUrlGenerator getUrlGenerator;
+    private final PropertyAddressRepository propertyAddressRepository;
+    private final PropertyOptionQueryService propertyOptionQueryService;
 
     @Transactional(readOnly = true)
     public PropertyEditDetailResponse getEditDetail(
@@ -46,9 +52,21 @@ public class PropertyEditDetailService {
                 actorContext
         );
 
+        PropertyAddress address = propertyAddressRepository
+                .findByProperty_PropertyIdAndDeletedAtIsNull(propertyId)
+                .orElseThrow(() -> new BusinessException(
+                        CustomResponseCode.PROPERTY_NOT_FOUND,
+                        "매물 주소를 찾을 수 없습니다."
+                ));
+
         return PropertyEditDetailResponse.from(
                 property,
-                findActiveImages(propertyId)
+                findActiveImages(propertyId),
+                PropertyEditAddressResponse.from(address),
+                propertyOptionQueryService.getEditOptions(
+                        propertyId,
+                        property.getPropertyType()
+                )
         );
     }
 

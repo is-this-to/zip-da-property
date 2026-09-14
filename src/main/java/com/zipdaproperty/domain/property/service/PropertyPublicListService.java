@@ -8,12 +8,15 @@ import com.zipdaproperty.domain.property.repository.PropertyPublicListQueryRow;
 import com.zipdaproperty.domain.property.request.PropertyPublicListRequest;
 import com.zipdaproperty.domain.property.response.PropertyPublicListItemResponse;
 import com.zipdaproperty.domain.property.response.PropertyPublicListResponse;
+import com.zipdaproperty.domain.favorite.repository.PropertyFavoriteListQueryRepository;
 import lombok.RequiredArgsConstructor;
 import org.locationtech.jts.geom.Point;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -22,9 +25,14 @@ public class PropertyPublicListService {
     private final PropertyPublicListQueryRepository queryRepository;
     private final PropertyPublicListCursorCodec cursorCodec;
     private final PropertyListSearchContextHasher contextHasher;
+    private final PropertyPublicImageService imageService;
+    private final PropertyFavoriteListQueryRepository favoriteQueryRepository;
 
     @Transactional(readOnly = true)
-    public PropertyPublicListResponse findProperties(PropertyPublicListRequest request) {
+    public PropertyPublicListResponse findProperties(
+            PropertyPublicListRequest request,
+            Long memberId
+    ) {
         PropertyListBounds bounds = request.toBounds();
         PropertyMapSearchCondition condition = request.toSearchCondition();
         String contextHash = contextHasher.hash(bounds, condition);
@@ -45,6 +53,19 @@ public class PropertyPublicListService {
         List<PropertyPublicListQueryRow> visibleRows = rows.stream()
                 .limit(size)
                 .toList();
+        List<Long> propertyIds = visibleRows.stream()
+                .map(PropertyPublicListQueryRow::propertyId)
+                .toList();
+        Map<Long, String> representativeImageUrls =
+                imageService.findRepresentativeImageUrls(propertyIds);
+        Map<Long, Long> favoriteCounts =
+                favoriteQueryRepository.countByPropertyIds(propertyIds);
+        Set<Long> favoritePropertyIds = memberId == null
+                ? Set.of()
+                : favoriteQueryRepository.findFavoritePropertyIds(
+                        memberId,
+                        propertyIds
+                );
 
         String nextCursor = hasNext
                 ? cursorCodec.encode(toCursor(
@@ -55,7 +76,14 @@ public class PropertyPublicListService {
                 : null;
 
         return new PropertyPublicListResponse(
-                visibleRows.stream().map(this::toResponse).toList(),
+                visibleRows.stream()
+                        .map(row -> toResponse(
+                                row,
+                                representativeImageUrls,
+                                favoriteCounts,
+                                favoritePropertyIds
+                        ))
+                        .toList(),
                 nextCursor,
                 hasNext
         );
@@ -81,7 +109,12 @@ public class PropertyPublicListService {
         };
     }
 
-    private PropertyPublicListItemResponse toResponse(PropertyPublicListQueryRow row) {
+    private PropertyPublicListItemResponse toResponse(
+            PropertyPublicListQueryRow row,
+            Map<Long, String> representativeImageUrls,
+            Map<Long, Long> favoriteCounts,
+            Set<Long> favoritePropertyIds
+    ) {
         Point publicLocation = row.publicLocation();
         return new PropertyPublicListItemResponse(
                 row.propertyId(),
@@ -98,7 +131,10 @@ public class PropertyPublicListService {
                 row.publisherType(),
                 row.publicAddress(),
                 publicLocation.getY(),
-                publicLocation.getX()
+                publicLocation.getX(),
+                representativeImageUrls.get(row.propertyId()),
+                favoriteCounts.getOrDefault(row.propertyId(), 0L),
+                favoritePropertyIds.contains(row.propertyId())
         );
     }
 }

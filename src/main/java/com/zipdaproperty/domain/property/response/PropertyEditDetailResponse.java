@@ -7,6 +7,7 @@ import com.zipdaproperty.domain.property.constant.TransactionStatus;
 import com.zipdaproperty.domain.property.constant.TransactionType;
 import com.zipdaproperty.domain.property.constant.VerificationStatus;
 import com.zipdaproperty.domain.property.entity.Property;
+import com.zipdaproperty.domain.option.response.PropertyEditOptionResponse;
 import com.zipdaproperty.global.id.TsidString;
 
 import java.math.BigDecimal;
@@ -76,13 +77,19 @@ public record PropertyEditDetailResponse(
 
         VerificationStatus verificationStatus,
 
-        List<PropertyEditImageResponse> images
+        List<PropertyEditImageResponse> images,
+
+        PropertyEditAddressResponse address,
+
+        List<PropertyEditOptionResponse> options
 
 ) {
 
     public static PropertyEditDetailResponse from(
             Property property,
-            List<PropertyEditImageResponse> images
+            List<PropertyEditImageResponse> images,
+            PropertyEditAddressResponse address,
+            List<PropertyEditOptionResponse> options
     ) {
         return new PropertyEditDetailResponse(
                 property.getPropertyId(),
@@ -114,7 +121,9 @@ public record PropertyEditDetailResponse(
                 property.getPublicationStatus(),
                 property.getTransactionStatus(),
                 property.getVerificationStatus(),
-                List.copyOf(images)
+                List.copyOf(images),
+                address,
+                List.copyOf(options)
         );
     }
 }

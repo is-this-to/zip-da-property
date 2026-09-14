@@ -42,7 +42,7 @@ class PropertyPublicListControllerTest {
 
     @Test
     void bindBoundsFiltersSortCursorAndSize() throws Exception {
-        when(service.findProperties(any())).thenReturn(
+        when(service.findProperties(any(), org.mockito.ArgumentMatchers.eq(1001L))).thenReturn(
                 new PropertyPublicListResponse(List.of(), null, false)
         );
 
@@ -54,12 +54,13 @@ class PropertyPublicListControllerTest {
                         .param("propertyTypes", "APARTMENT", "ROOM")
                         .param("sort", "PRICE_ASC")
                         .param("cursor", "opaque-cursor")
-                        .param("size", "30"))
+                        .param("size", "30")
+                        .header("X-User-Id", "1001"))
                 .andExpect(status().isOk());
 
         ArgumentCaptor<PropertyPublicListRequest> captor =
                 ArgumentCaptor.forClass(PropertyPublicListRequest.class);
-        verify(service).findProperties(captor.capture());
+        verify(service).findProperties(captor.capture(), org.mockito.ArgumentMatchers.eq(1001L));
 
         PropertyPublicListRequest request = captor.getValue();
         assertThat(request.propertyTypes()).containsExactlyInAnyOrder(
