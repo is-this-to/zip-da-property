@@ -2,15 +2,21 @@ package com.zipdaproperty.domain.report.controller;
 
 import com.zipdaproperty.domain.report.request.PropertyReportActionRequest;
 import com.zipdaproperty.domain.report.request.PropertyReportAdminListRequest;
+import com.zipdaproperty.domain.report.request.PropertyReportAdminAssignmentRequest;
+import com.zipdaproperty.domain.report.request.PropertyReportAdminRiskScoreRequest;
 import com.zipdaproperty.domain.report.request.PropertyReportAdminStatusChangeRequest;
 import com.zipdaproperty.domain.report.response.PropertyReportActionResponse;
 import com.zipdaproperty.domain.report.response.PropertyReportAdminDetailResponse;
 import com.zipdaproperty.domain.report.response.PropertyReportAdminListItemResponse;
 import com.zipdaproperty.domain.report.response.PropertyReportAdminListResponse;
+import com.zipdaproperty.domain.report.response.PropertyReportAdminAssignmentResponse;
+import com.zipdaproperty.domain.report.response.PropertyReportAdminRiskScoreResponse;
 import com.zipdaproperty.domain.report.response.PropertyReportAdminStatusChangeResponse;
 import com.zipdaproperty.domain.report.service.PropertyReportActionService;
 import com.zipdaproperty.domain.report.service.PropertyReportAdminDetailService;
 import com.zipdaproperty.domain.report.service.PropertyReportAdminListService;
+import com.zipdaproperty.domain.report.service.PropertyReportAdminAssignmentService;
+import com.zipdaproperty.domain.report.service.PropertyReportAdminRiskScoreService;
 import com.zipdaproperty.domain.report.service.PropertyReportAdminStatusChangeService;
 import com.zipdaproperty.domain.report.type.ReportActionCode;
 import com.zipdaproperty.domain.report.type.ReportReasonCode;
@@ -65,6 +71,10 @@ class PropertyReportAdminControllerTest {
             mock(PropertyReportAdminDetailService.class);
     private final PropertyReportAdminStatusChangeService statusChangeService =
             mock(PropertyReportAdminStatusChangeService.class);
+    private final PropertyReportAdminAssignmentService assignmentService =
+            mock(PropertyReportAdminAssignmentService.class);
+    private final PropertyReportAdminRiskScoreService riskScoreService =
+            mock(PropertyReportAdminRiskScoreService.class);
     private final ActorContext adminContext = ActorContext.member(
             3001L,
             ActorRole.CS_ADMIN,
@@ -80,6 +90,8 @@ class PropertyReportAdminControllerTest {
                         listService,
                         detailService,
                         statusChangeService,
+                        assignmentService,
+                        riskScoreService,
                         actionService
                 );
 
@@ -194,6 +206,91 @@ class PropertyReportAdminControllerTest {
                 request,
                 adminContext
         );
+    }
+
+    @Test
+    void assignAdmin_passesAssigneeAndReturnsIncrementedVersion() throws Exception {
+        PropertyReportAdminAssignmentRequest request =
+                new PropertyReportAdminAssignmentRequest(3002L, 3L);
+        when(assignmentService.assign(REPORT_ID, request, adminContext))
+                .thenReturn(new PropertyReportAdminAssignmentResponse(
+                        REPORT_ID,
+                        3002L,
+                        4L
+                ));
+
+        mockMvc.perform(patch(
+                        "/api/admin/property-reports/{reportId}/assignee",
+                        REPORT_ID
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "assignedAdminId": "3002",
+                                  "version": 3
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.reportId").value(REPORT_ID.toString()))
+                .andExpect(jsonPath("$.data.assignedAdminId").value("3002"))
+                .andExpect(jsonPath("$.data.version").value(4));
+
+        verify(assignmentService).assign(REPORT_ID, request, adminContext);
+    }
+
+    @Test
+    void changeRiskScore_passesScoreAndReturnsIncrementedVersion() throws Exception {
+        PropertyReportAdminRiskScoreRequest request =
+                new PropertyReportAdminRiskScoreRequest(new BigDecimal("42.50"), 3L);
+        when(riskScoreService.changeRiskScore(REPORT_ID, request, adminContext))
+                .thenReturn(new PropertyReportAdminRiskScoreResponse(
+                        REPORT_ID,
+                        new BigDecimal("42.50"),
+                        4L
+                ));
+
+        mockMvc.perform(patch(
+                        "/api/admin/property-reports/{reportId}/risk-score",
+                        REPORT_ID
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "riskScore": 42.50,
+                                  "version": 3
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.reportId").value(REPORT_ID.toString()))
+                .andExpect(jsonPath("$.data.riskScore").value(42.50))
+                .andExpect(jsonPath("$.data.version").value(4));
+
+        verify(riskScoreService).changeRiskScore(REPORT_ID, request, adminContext);
+    }
+
+    @Test
+    void reportAdminUpdateEndpoints_requireCsOrSuperAdmin() throws Exception {
+        Method assignmentMethod = PropertyReportAdminController.class.getDeclaredMethod(
+                "assignAdmin",
+                Long.class,
+                PropertyReportAdminAssignmentRequest.class,
+                ActorContext.class
+        );
+        Method riskScoreMethod = PropertyReportAdminController.class.getDeclaredMethod(
+                "changeRiskScore",
+                Long.class,
+                PropertyReportAdminRiskScoreRequest.class,
+                ActorContext.class
+        );
+
+        assertThat(assignmentMethod.getAnnotation(PatchMapping.class).value())
+                .containsExactly("/{reportId}/assignee");
+        assertThat(riskScoreMethod.getAnnotation(PatchMapping.class).value())
+                .containsExactly("/{reportId}/risk-score");
+        assertThat(List.of(assignmentMethod, riskScoreMethod))
+                .allSatisfy(method -> assertThat(
+                        method.getAnnotation(PreAuthorize.class).value()
+                ).isEqualTo("hasAnyRole('CS_ADMIN', 'SUPER_ADMIN')"));
     }
 
     @Test

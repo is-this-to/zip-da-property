@@ -1,15 +1,21 @@
 package com.zipdaproperty.domain.report.controller;
 
 import com.zipdaproperty.domain.report.request.PropertyReportAdminListRequest;
+import com.zipdaproperty.domain.report.request.PropertyReportAdminAssignmentRequest;
+import com.zipdaproperty.domain.report.request.PropertyReportAdminRiskScoreRequest;
 import com.zipdaproperty.domain.report.request.PropertyReportAdminStatusChangeRequest;
 import com.zipdaproperty.domain.report.request.PropertyReportActionRequest;
 import com.zipdaproperty.domain.report.response.PropertyReportAdminDetailResponse;
 import com.zipdaproperty.domain.report.response.PropertyReportAdminListResponse;
+import com.zipdaproperty.domain.report.response.PropertyReportAdminAssignmentResponse;
+import com.zipdaproperty.domain.report.response.PropertyReportAdminRiskScoreResponse;
 import com.zipdaproperty.domain.report.response.PropertyReportAdminStatusChangeResponse;
 import com.zipdaproperty.domain.report.response.PropertyReportActionResponse;
 import com.zipdaproperty.domain.report.service.PropertyReportActionService;
 import com.zipdaproperty.domain.report.service.PropertyReportAdminDetailService;
 import com.zipdaproperty.domain.report.service.PropertyReportAdminListService;
+import com.zipdaproperty.domain.report.service.PropertyReportAdminAssignmentService;
+import com.zipdaproperty.domain.report.service.PropertyReportAdminRiskScoreService;
 import com.zipdaproperty.domain.report.service.PropertyReportAdminStatusChangeService;
 import com.zipdaproperty.global.config.openapi.CustomApiResponse;
 import com.zipdaproperty.global.context.ActorContext;
@@ -42,6 +48,8 @@ public class PropertyReportAdminController {
     private final PropertyReportAdminListService propertyReportAdminListService;
     private final PropertyReportAdminDetailService propertyReportAdminDetailService;
     private final PropertyReportAdminStatusChangeService propertyReportAdminStatusChangeService;
+    private final PropertyReportAdminAssignmentService propertyReportAdminAssignmentService;
+    private final PropertyReportAdminRiskScoreService propertyReportAdminRiskScoreService;
     private final PropertyReportActionService propertyReportActionService;
 
     @GetMapping
@@ -119,6 +127,68 @@ public class PropertyReportAdminController {
     ) {
         PropertyReportAdminStatusChangeResponse response =
                 propertyReportAdminStatusChangeService.changeStatus(
+                        reportId,
+                        request,
+                        actorContext
+                );
+
+        return ResponseEntity.ok(GlobalResponseDTO.success(response));
+    }
+
+    @PatchMapping("/{reportId}/assignee")
+    @PreAuthorize("hasAnyRole('CS_ADMIN', 'SUPER_ADMIN')")
+    @CustomApiResponse({
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.UNAUTHENTICATED,
+            CustomResponseCode.FORBIDDEN,
+            CustomResponseCode.NOT_FOUND_RESOURCE,
+            CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.METHOD_NOT_ALLOWED,
+            CustomResponseCode.DB_ERROR,
+            CustomResponseCode.SYSTEM_ERROR
+    })
+    public ResponseEntity<GlobalResponseDTO<PropertyReportAdminAssignmentResponse>> assignAdmin(
+            @PathVariable
+            @Positive(message = "신고 ID는 0보다 커야 합니다.")
+            Long reportId,
+            @Valid @RequestBody
+            PropertyReportAdminAssignmentRequest request,
+            @Parameter(hidden = true)
+            ActorContext actorContext
+    ) {
+        PropertyReportAdminAssignmentResponse response =
+                propertyReportAdminAssignmentService.assign(
+                        reportId,
+                        request,
+                        actorContext
+                );
+
+        return ResponseEntity.ok(GlobalResponseDTO.success(response));
+    }
+
+    @PatchMapping("/{reportId}/risk-score")
+    @PreAuthorize("hasAnyRole('CS_ADMIN', 'SUPER_ADMIN')")
+    @CustomApiResponse({
+            CustomResponseCode.INVALID_REQUEST,
+            CustomResponseCode.UNAUTHENTICATED,
+            CustomResponseCode.FORBIDDEN,
+            CustomResponseCode.NOT_FOUND_RESOURCE,
+            CustomResponseCode.VERSION_CONFLICT,
+            CustomResponseCode.METHOD_NOT_ALLOWED,
+            CustomResponseCode.DB_ERROR,
+            CustomResponseCode.SYSTEM_ERROR
+    })
+    public ResponseEntity<GlobalResponseDTO<PropertyReportAdminRiskScoreResponse>> changeRiskScore(
+            @PathVariable
+            @Positive(message = "신고 ID는 0보다 커야 합니다.")
+            Long reportId,
+            @Valid @RequestBody
+            PropertyReportAdminRiskScoreRequest request,
+            @Parameter(hidden = true)
+            ActorContext actorContext
+    ) {
+        PropertyReportAdminRiskScoreResponse response =
+                propertyReportAdminRiskScoreService.changeRiskScore(
                         reportId,
                         request,
                         actorContext

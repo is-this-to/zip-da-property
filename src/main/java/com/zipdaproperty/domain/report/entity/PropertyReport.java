@@ -139,4 +139,30 @@ public class PropertyReport extends BaseAuditEntity {
         );
         recordUpdate(actorContext);
     }
+
+    public void assignAdmin(
+            Long assignedAdminId,
+            ActorContext actorContext
+    ) {
+        if (assignedAdminId == null || assignedAdminId <= 0) {
+            throw new IllegalArgumentException("담당 관리자 ID는 0보다 커야 합니다.");
+        }
+
+        this.assignedAdminId = assignedAdminId;
+        recordUpdate(actorContext);
+    }
+
+    public void changeRiskScore(
+            BigDecimal riskScore,
+            ActorContext actorContext
+    ) {
+        if (riskScore == null
+                || riskScore.compareTo(BigDecimal.ZERO) < 0
+                || riskScore.compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw new IllegalArgumentException("신고 위험점수는 0 이상 100 이하여야 합니다.");
+        }
+
+        this.riskScore = riskScore;
+        recordUpdate(actorContext);
+    }
 }
