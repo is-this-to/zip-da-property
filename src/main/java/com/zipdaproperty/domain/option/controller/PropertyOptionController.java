@@ -17,12 +17,12 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/property/property-option-codes")
+@RequestMapping("/api/property")
 public class PropertyOptionController {
 
     private final PropertyOptionQueryService propertyOptionQueryService;
 
-    @GetMapping
+    @GetMapping("/property-option-codes")
     @CustomApiResponse({
             CustomResponseCode.INVALID_REQUEST,
             CustomResponseCode.METHOD_NOT_ALLOWED,
