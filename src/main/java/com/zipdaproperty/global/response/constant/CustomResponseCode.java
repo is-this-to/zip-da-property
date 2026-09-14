@@ -105,6 +105,38 @@ public enum CustomResponseCode {
             "P31"
     ),
 
+    // 신고 관련
+    DUPLICATE_ACTIVE_REPORT(
+            HttpStatus.CONFLICT,
+            "P32"
+    ),
+    RATE_LIMITED(
+            HttpStatus.TOO_MANY_REQUESTS,
+            "P33"
+    ),
+    AUDIT_REASON_REQUIRED(
+            HttpStatus.BAD_REQUEST,
+            "P34"
+    ),
+    INVALID_REPORT_TRANSITION(
+            HttpStatus.CONFLICT,
+            "P35"
+    ),
+    // 이의신청 관련
+    DUPLICATE_APPEAL(
+        HttpStatus.CONFLICT,
+        "P36"
+    ),
+    APPEAL_NOT_ALLOWED(
+        HttpStatus.CONFLICT,
+        "P37"
+    ),
+    APPEAL_PERIOD_EXPIRED(
+        HttpStatus.GONE,
+        "P38"
+    ),
+
+
     // 매물 소유·중개 검증 관련
     PROPERTY_VERIFICATION_ALREADY_IN_PROGRESS(
             HttpStatus.CONFLICT,

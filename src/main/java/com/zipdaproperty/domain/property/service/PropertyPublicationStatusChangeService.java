@@ -2,6 +2,7 @@ package com.zipdaproperty.domain.property.service;
 
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
+import com.zipdaproperty.domain.property.command.PropertyPublicationStatusChangeCommand;
 import com.zipdaproperty.domain.property.constant.PropertyStatusType;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
 import com.zipdaproperty.domain.property.entity.Property;
@@ -80,9 +81,51 @@ public class PropertyPublicationStatusChangeService {
                 request.version()
         );
 
-        publicationStatusPolicy.validateTransition(
+        return applyChange(
+                property,
                 beforeStatus,
                 request.targetStatus(),
+                request.reason(),
+                actorContext
+        );
+    }
+
+    @Transactional
+    public PropertyPublicationStatusChangeResponse change(
+            PropertyPublicationStatusChangeCommand command,
+            ActorContext actorContext
+    ) {
+        Property property = findProperty(command.propertyId());
+
+        PublicationStatus beforeStatus =
+                property.getPublicationStatus();
+
+        validateChangePermission(
+                property,
+                beforeStatus,
+                command.targetStatus(),
+                actorContext
+        );
+
+        return applyChange(
+                property,
+                beforeStatus,
+                command.targetStatus(),
+                command.reason(),
+                actorContext
+        );
+    }
+
+    private PropertyPublicationStatusChangeResponse applyChange(
+            Property property,
+            PublicationStatus beforeStatus,
+            PublicationStatus targetStatus,
+            String reason,
+            ActorContext actorContext
+    ) {
+        publicationStatusPolicy.validateTransition(
+                beforeStatus,
+                targetStatus,
                 property.getTransactionStatus()
         );
 
@@ -92,7 +135,7 @@ public class PropertyPublicationStatusChangeService {
         Instant occurredAt = Instant.now();
 
         property.changePublicationStatus(
-                request.targetStatus(),
+                targetStatus,
                 actorContext,
                 occurredAt
         );
@@ -114,7 +157,7 @@ public class PropertyPublicationStatusChangeService {
                         changedFieldsJson,
                         beforeSnapshotJson,
                         afterSnapshotJson,
-                        request.reason(),
+                        reason,
                         actorContext,
                         occurredAt
                 );
@@ -130,7 +173,7 @@ public class PropertyPublicationStatusChangeService {
                         beforeStatus.name(),
                         savedProperty.getPublicationStatus().name(),
                         null,
-                        request.reason(),
+                        reason,
                         savedProperty.getVersion(),
                         occurredAt,
                         actorContext
@@ -141,7 +184,7 @@ public class PropertyPublicationStatusChangeService {
         recordPublicationStatusChangeEvents(
                 savedProperty,
                 beforeStatus,
-                request.reason(),
+                reason,
                 occurredAt,
                 actorContext
         );
