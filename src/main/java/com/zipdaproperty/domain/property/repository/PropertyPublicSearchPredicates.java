@@ -72,7 +72,7 @@ public class PropertyPublicSearchPredicates {
                 .otherwise(property.monthlyRent);
     }
 
-    private BooleanExpression publiclyVisibleProperty() {
+    BooleanExpression publiclyVisibleProperty() {
         return property.publicationStatus.eq(PublicationStatus.PUBLISHED)
                 .and(property.transactionStatus.in(
                         TransactionStatus.AVAILABLE,
