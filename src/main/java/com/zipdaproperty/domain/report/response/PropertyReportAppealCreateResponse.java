@@ -5,6 +5,8 @@ import com.zipdaproperty.global.id.TsidString;
 
 public record PropertyReportAppealCreateResponse(
 
+        Long appealId,
+
         @TsidString
         Long reportId,
 

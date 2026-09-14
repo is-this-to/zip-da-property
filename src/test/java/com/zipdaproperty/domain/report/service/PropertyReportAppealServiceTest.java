@@ -21,6 +21,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -42,6 +43,7 @@ class PropertyReportAppealServiceTest {
     private static final Long PROPERTY_ID = 884700000000000001L;
     private static final Long AUTHOR_MEMBER_ID = 2001L;
     private static final Long ACTION_ADMIN_ID = 3001L;
+    private static final Long APPEAL_ID = 41L;
     private static final String DETAIL = "운영조치에 이의를 신청하는 상세 사유입니다.";
 
     private final PropertyReportRepository reportRepository =
@@ -70,7 +72,11 @@ class PropertyReportAppealServiceTest {
         prepareProperty(AUTHOR_MEMBER_ID);
         prepareAllowedAction(Instant.now().minus(6, ChronoUnit.DAYS));
         when(appealRepository.saveAndFlush(any(PropertyReportAppeal.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> {
+                    PropertyReportAppeal appeal = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(appeal, "appealId", APPEAL_ID);
+                    return appeal;
+                });
 
         PropertyReportAppealCreateResponse response = service.createAppeal(
                 REPORT_ID,
@@ -87,6 +93,7 @@ class PropertyReportAppealServiceTest {
         assertThat(appeal.getDetail()).isEqualTo(DETAIL);
         assertThat(appeal.getStatus()).isEqualTo(AppealStatus.SUBMITTED);
         assertThat(response.reportId()).isEqualTo(REPORT_ID);
+        assertThat(response.appealId()).isEqualTo(APPEAL_ID);
         assertThat(response.status()).isEqualTo(ReportStatus.ACTIONED);
         assertThat(response.version()).isEqualTo(3L);
         verify(report, never()).changeStatus(any(), any());

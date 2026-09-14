@@ -1,8 +1,16 @@
 package com.zipdaproperty.domain.report.service;
 
+import com.zipdaproperty.domain.file.constant.FilePurpose;
+import com.zipdaproperty.domain.file.constant.UploadStatus;
+import com.zipdaproperty.domain.file.entity.PropertyFile;
+import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
+import com.zipdaproperty.domain.file.storage.MinioPresignedGetUrlGenerator;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
+import com.zipdaproperty.domain.report.entity.PropertyReportEvidence;
 import com.zipdaproperty.domain.report.repository.PropertyReportAdminDetailQueryRepository;
 import com.zipdaproperty.domain.report.repository.PropertyReportAdminDetailQueryRow;
+import com.zipdaproperty.domain.report.repository.PropertyReportEvidenceRepository;
+import com.zipdaproperty.domain.report.response.PropertyReportAdminEvidenceResponse;
 import com.zipdaproperty.domain.report.response.PropertyReportAdminDetailResponse;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
@@ -13,6 +21,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode.PROPERTY_REPORT_DETAIL_VIEWED;
 
@@ -24,6 +36,9 @@ public class PropertyReportAdminDetailService {
     private static final int MAX_AUDIT_REASON_LENGTH = 200;
 
     private final PropertyReportAdminDetailQueryRepository propertyReportAdminDetailQueryRepository;
+    private final PropertyReportEvidenceRepository propertyReportEvidenceRepository;
+    private final PropertyFileRepository propertyFileRepository;
+    private final MinioPresignedGetUrlGenerator getUrlGenerator;
     private final PropertyAuditEventRecorder propertyAuditEventRecorder;
 
     @Transactional
@@ -52,7 +67,7 @@ public class PropertyReportAdminDetailService {
                 actorContext
         );
 
-        return toResponse(row);
+        return toResponse(row, findEvidence(reportId));
     }
 
     private void validateActor(ActorContext actorContext) {
@@ -92,7 +107,8 @@ public class PropertyReportAdminDetailService {
     }
 
     private PropertyReportAdminDetailResponse toResponse(
-            PropertyReportAdminDetailQueryRow row
+            PropertyReportAdminDetailQueryRow row,
+            List<PropertyReportAdminEvidenceResponse> evidence
     ) {
         return new PropertyReportAdminDetailResponse(
                 row.reportId(),
@@ -104,7 +120,60 @@ public class PropertyReportAdminDetailService {
                 row.riskScore(),
                 row.assignedAdminId(),
                 row.version(),
-                row.createdAt()
+                row.createdAt(),
+                evidence
+        );
+    }
+
+    private List<PropertyReportAdminEvidenceResponse> findEvidence(Long reportId) {
+        List<PropertyReportEvidence> evidence = propertyReportEvidenceRepository
+                .findAllByReportIdAndDeletedAtIsNullOrderBySortOrderAscReportEvidenceIdAsc(
+                        reportId
+                );
+        if (evidence.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, PropertyFile> filesById = propertyFileRepository
+                .findAllByPropertyFileIdInAndDeletedAtIsNull(
+                        evidence.stream()
+                                .map(PropertyReportEvidence::getPropertyFileId)
+                                .toList()
+                )
+                .stream()
+                .collect(Collectors.toMap(
+                        PropertyFile::getPropertyFileId,
+                        Function.identity()
+                ));
+
+        return evidence.stream()
+                .filter(item -> isAvailableEvidenceFile(
+                        filesById.get(item.getPropertyFileId())
+                ))
+                .map(item -> toEvidenceResponse(
+                        item,
+                        filesById.get(item.getPropertyFileId())
+                ))
+                .toList();
+    }
+
+    private boolean isAvailableEvidenceFile(PropertyFile file) {
+        return file != null
+                && file.getUploadStatus() == UploadStatus.LINKED
+                && file.getFilePurpose() == FilePurpose.REPORT_EVIDENCE
+                && file.getObjectDeletedAt() == null;
+    }
+
+    private PropertyReportAdminEvidenceResponse toEvidenceResponse(
+            PropertyReportEvidence evidence,
+            PropertyFile file
+    ) {
+        return new PropertyReportAdminEvidenceResponse(
+                evidence.getReportEvidenceId(),
+                evidence.getPropertyFileId(),
+                evidence.getEvidenceType(),
+                evidence.getSortOrder(),
+                getUrlGenerator.generate(file.getObjectKey())
         );
     }
 }

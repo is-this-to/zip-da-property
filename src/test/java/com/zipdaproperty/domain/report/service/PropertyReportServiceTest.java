@@ -4,8 +4,8 @@ import com.zipdaproperty.domain.file.constant.FilePurpose;
 import com.zipdaproperty.domain.file.constant.UploadStatus;
 import com.zipdaproperty.domain.file.entity.PropertyFile;
 import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
-import com.zipdaproperty.domain.property.entity.Property;
-import com.zipdaproperty.domain.property.repository.PropertyRepository;
+import com.zipdaproperty.domain.property.repository.PropertyPublicDetailQueryRepository;
+import com.zipdaproperty.domain.property.repository.PropertyPublicDetailQueryRow;
 import com.zipdaproperty.domain.report.entity.PropertyReport;
 import com.zipdaproperty.domain.report.entity.PropertyReportEvidence;
 import com.zipdaproperty.domain.report.repository.PropertyReportEvidenceRepository;
@@ -57,8 +57,8 @@ class PropertyReportServiceTest {
 
     private final PropertyReportRepository propertyReportRepository =
             mock(PropertyReportRepository.class);
-    private final PropertyRepository propertyRepository =
-            mock(PropertyRepository.class);
+    private final PropertyPublicDetailQueryRepository publicDetailQueryRepository =
+            mock(PropertyPublicDetailQueryRepository.class);
     private final PropertyReportEvidenceRepository evidenceRepository =
             mock(PropertyReportEvidenceRepository.class);
     private final PropertyFileRepository propertyFileRepository =
@@ -71,14 +71,14 @@ class PropertyReportServiceTest {
     void setUp() {
         service = new PropertyReportService(
                 propertyReportRepository,
-                propertyRepository,
+                publicDetailQueryRepository,
                 evidenceRepository,
                 propertyFileRepository,
                 tsidGenerator
         );
 
-        when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(PROPERTY_ID))
-                .thenReturn(Optional.of(mock(Property.class)));
+        when(publicDetailQueryRepository.findPublicDetail(PROPERTY_ID))
+                .thenReturn(Optional.of(mock(PropertyPublicDetailQueryRow.class)));
         when(propertyReportRepository
                 .countDailyReportsIncludingDeleted(REPORTER_MEMBER_ID))
                 .thenReturn(0L);
@@ -142,7 +142,7 @@ class PropertyReportServiceTest {
 
     @Test
     void createReport_propertyDoesNotExist_throwsPropertyNotFound() {
-        when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(PROPERTY_ID))
+        when(publicDetailQueryRepository.findPublicDetail(PROPERTY_ID))
                 .thenReturn(Optional.empty());
 
         assertBusinessException(

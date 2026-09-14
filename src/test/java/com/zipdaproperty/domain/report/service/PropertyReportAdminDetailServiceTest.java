@@ -1,9 +1,16 @@
 package com.zipdaproperty.domain.report.service;
 
+import com.zipdaproperty.domain.file.constant.FilePurpose;
+import com.zipdaproperty.domain.file.entity.PropertyFile;
+import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
+import com.zipdaproperty.domain.file.storage.MinioPresignedGetUrlGenerator;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
+import com.zipdaproperty.domain.report.entity.PropertyReportEvidence;
 import com.zipdaproperty.domain.report.repository.PropertyReportAdminDetailQueryRepository;
 import com.zipdaproperty.domain.report.repository.PropertyReportAdminDetailQueryRow;
+import com.zipdaproperty.domain.report.repository.PropertyReportEvidenceRepository;
 import com.zipdaproperty.domain.report.response.PropertyReportAdminDetailResponse;
+import com.zipdaproperty.domain.report.type.ReportEvidenceType;
 import com.zipdaproperty.domain.report.type.ReportReasonCode;
 import com.zipdaproperty.domain.report.type.ReportStatus;
 import com.zipdaproperty.global.context.ActorContext;
@@ -18,6 +25,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode.PROPERTY_REPORT_DETAIL_VIEWED;
@@ -40,13 +48,53 @@ class PropertyReportAdminDetailServiceTest {
             mock(PropertyReportAdminDetailQueryRepository.class);
     private final PropertyAuditEventRecorder auditEventRecorder =
             mock(PropertyAuditEventRecorder.class);
+    private final PropertyReportEvidenceRepository evidenceRepository =
+            mock(PropertyReportEvidenceRepository.class);
+    private final PropertyFileRepository propertyFileRepository =
+            mock(PropertyFileRepository.class);
+    private final MinioPresignedGetUrlGenerator getUrlGenerator =
+            mock(MinioPresignedGetUrlGenerator.class);
     private final PropertyReportAdminDetailService service =
-            new PropertyReportAdminDetailService(repository, auditEventRecorder);
+            new PropertyReportAdminDetailService(
+                    repository,
+                    evidenceRepository,
+                    propertyFileRepository,
+                    getUrlGenerator,
+                    auditEventRecorder
+            );
 
     @ParameterizedTest
     @EnumSource(value = ActorRole.class, names = {"CS_ADMIN", "SUPER_ADMIN"})
     void findReport_adminRoles_mapDetailAndRecordTrimmedAuditReason(ActorRole role) {
         when(repository.findReport(REPORT_ID)).thenReturn(Optional.of(row()));
+        PropertyReportEvidence evidence = PropertyReportEvidence.create(
+                REPORT_ID,
+                4001L,
+                ReportEvidenceType.SCREENSHOT,
+                0,
+                adminContext()
+        );
+        PropertyFile file = PropertyFile.create(
+                4001L,
+                "report-evidence-session",
+                FilePurpose.REPORT_EVIDENCE,
+                "evidence.jpg",
+                1024L,
+                "report/evidence/4001",
+                Instant.parse("2026-09-15T00:00:00Z"),
+                ActorContext.member(1001L, ActorRole.USER, "report-admin-detail-test")
+        );
+        file.complete("a".repeat(64), "image/jpeg", adminContext());
+        file.markLinked(adminContext());
+        when(evidenceRepository
+                .findAllByReportIdAndDeletedAtIsNullOrderBySortOrderAscReportEvidenceIdAsc(
+                        REPORT_ID
+                )).thenReturn(List.of(evidence));
+        when(propertyFileRepository.findAllByPropertyFileIdInAndDeletedAtIsNull(
+                List.of(4001L)
+        )).thenReturn(List.of(file));
+        when(getUrlGenerator.generate("report/evidence/4001"))
+                .thenReturn("https://minio.test/report/evidence/4001");
         ActorContext context = ActorContext.member(3001L, role, "report-admin-detail-test");
 
         PropertyReportAdminDetailResponse response =
@@ -62,6 +110,13 @@ class PropertyReportAdminDetailServiceTest {
         assertThat(response.assignedAdminId()).isEqualTo(3001L);
         assertThat(response.version()).isEqualTo(3L);
         assertThat(response.createdAt()).isEqualTo(CREATED_AT);
+        assertThat(response.evidence()).singleElement().satisfies(item -> {
+            assertThat(item.fileId()).isEqualTo(4001L);
+            assertThat(item.evidenceType()).isEqualTo(ReportEvidenceType.SCREENSHOT);
+            assertThat(item.sortOrder()).isZero();
+            assertThat(item.fileUrl())
+                    .isEqualTo("https://minio.test/report/evidence/4001");
+        });
         verify(auditEventRecorder).recordAction(
                 eq("PROPERTY_REPORT"),
                 eq(REPORT_ID.toString()),

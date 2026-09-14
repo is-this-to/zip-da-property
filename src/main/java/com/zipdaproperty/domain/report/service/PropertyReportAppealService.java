@@ -83,18 +83,19 @@ public class PropertyReportAppealService {
                 detail,
                 actorContext
         );
-        saveAndFlush(appeal);
+        PropertyReportAppeal savedAppeal = saveAndFlush(appeal);
 
         return new PropertyReportAppealCreateResponse(
+                savedAppeal.getAppealId(),
                 report.getReportId(),
                 report.getStatus(),
                 report.getVersion()
         );
     }
 
-    private void saveAndFlush(PropertyReportAppeal appeal) {
+    private PropertyReportAppeal saveAndFlush(PropertyReportAppeal appeal) {
         try {
-            propertyReportAppealRepository.saveAndFlush(appeal);
+            return propertyReportAppealRepository.saveAndFlush(appeal);
         } catch (DataIntegrityViolationException exception) {
             if (isAppealUniqueViolation(exception)) {
                 throw duplicateAppeal();

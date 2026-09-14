@@ -6,6 +6,7 @@ import com.zipdaproperty.global.id.TsidString;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 public record PropertyReportAdminDetailResponse(
         @TsidString Long reportId,
@@ -17,6 +18,7 @@ public record PropertyReportAdminDetailResponse(
         BigDecimal riskScore,
         @TsidString Long assignedAdminId,
         Long version,
-        Instant createdAt
+        Instant createdAt,
+        List<PropertyReportAdminEvidenceResponse> evidence
 ) {
 }

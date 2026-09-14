@@ -53,10 +53,11 @@ class PropertyReportAppealControllerTest {
     }
 
     @Test
-    void createAppeal_validRequest_returnsCreatedWithoutAppealId()
+    void createAppeal_validRequest_returnsCreatedWithAppealId()
             throws Exception {
         when(appealService.createAppeal(REPORT_ID, DETAIL, actorContext))
                 .thenReturn(new PropertyReportAppealCreateResponse(
+                        41L,
                         REPORT_ID,
                         ReportStatus.ACTIONED,
                         3L
@@ -72,7 +73,7 @@ class PropertyReportAppealControllerTest {
                 .andExpect(jsonPath("$.data.reportId").value(REPORT_ID))
                 .andExpect(jsonPath("$.data.status").value("ACTIONED"))
                 .andExpect(jsonPath("$.data.version").value(3L))
-                .andExpect(jsonPath("$.data.appealId").doesNotExist());
+                .andExpect(jsonPath("$.data.appealId").value(41L));
 
         verify(appealService).createAppeal(REPORT_ID, DETAIL, actorContext);
     }

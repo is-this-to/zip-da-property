@@ -148,7 +148,8 @@ class PropertyReportAdminControllerTest {
                         new BigDecimal("42.50"),
                         3001L,
                         3L,
-                        EXECUTED_AT
+                        EXECUTED_AT,
+                        List.of()
                 ));
 
         mockMvc.perform(get(

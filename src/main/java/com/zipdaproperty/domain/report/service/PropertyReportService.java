@@ -3,7 +3,7 @@ package com.zipdaproperty.domain.report.service;
 import com.zipdaproperty.domain.file.constant.FilePurpose;
 import com.zipdaproperty.domain.file.entity.PropertyFile;
 import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
-import com.zipdaproperty.domain.property.repository.PropertyRepository;
+import com.zipdaproperty.domain.property.repository.PropertyPublicDetailQueryRepository;
 import com.zipdaproperty.domain.report.entity.PropertyReport;
 import com.zipdaproperty.domain.report.entity.PropertyReportEvidence;
 import com.zipdaproperty.domain.report.repository.PropertyReportEvidenceRepository;
@@ -52,7 +52,7 @@ public class PropertyReportService {
     );
 
     private final PropertyReportRepository propertyReportRepository;
-    private final PropertyRepository propertyRepository;
+    private final PropertyPublicDetailQueryRepository publicDetailQueryRepository;
     private final PropertyReportEvidenceRepository evidenceRepository;
     private final PropertyFileRepository propertyFileRepository;
     private final TsidGenerator tsidGenerator;
@@ -67,7 +67,7 @@ public class PropertyReportService {
     ) {
         validateReportActor(actorContext);
 
-        propertyRepository.findByPropertyIdAndDeletedAtIsNull(propertyId)
+        publicDetailQueryRepository.findPublicDetail(propertyId)
                 .orElseThrow(() -> new BusinessException(
                         CustomResponseCode.PROPERTY_NOT_FOUND,
                         "신고할 수 있는 매물이 없습니다."

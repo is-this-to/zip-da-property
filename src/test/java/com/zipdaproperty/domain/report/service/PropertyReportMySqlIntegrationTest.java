@@ -5,8 +5,8 @@ import com.zipdaproperty.domain.file.constant.UploadStatus;
 import com.zipdaproperty.domain.file.entity.PropertyFile;
 import com.zipdaproperty.domain.file.repository.PropertyFileRepository;
 import com.zipdaproperty.domain.image.entity.PropertyImage;
-import com.zipdaproperty.domain.property.entity.Property;
-import com.zipdaproperty.domain.property.repository.PropertyRepository;
+import com.zipdaproperty.domain.property.repository.PropertyPublicDetailQueryRepository;
+import com.zipdaproperty.domain.property.repository.PropertyPublicDetailQueryRow;
 import com.zipdaproperty.domain.report.entity.PropertyReport;
 import com.zipdaproperty.domain.report.entity.PropertyReportAction;
 import com.zipdaproperty.domain.report.entity.PropertyReportAppeal;
@@ -213,12 +213,13 @@ class PropertyReportMySqlIntegrationTest {
     }
 
     private PropertyReportService service(TsidGenerator generator) {
-        PropertyRepository propertyRepository = mock(PropertyRepository.class);
-        when(propertyRepository.findByPropertyIdAndDeletedAtIsNull(anyLong()))
-                .thenReturn(Optional.of(mock(Property.class)));
+        PropertyPublicDetailQueryRepository publicDetailQueryRepository =
+                mock(PropertyPublicDetailQueryRepository.class);
+        when(publicDetailQueryRepository.findPublicDetail(anyLong()))
+                .thenReturn(Optional.of(mock(PropertyPublicDetailQueryRow.class)));
         return new PropertyReportService(
                 reportRepository,
-                propertyRepository,
+                publicDetailQueryRepository,
                 evidenceRepository,
                 fileRepository,
                 generator
