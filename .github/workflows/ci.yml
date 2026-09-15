@@ -27,3 +27,5 @@ jobs:
       # Test sources are not yet maintained as a CI contract. Validate the
       # production source and deployable artifact until they are ready.
       - run: ./gradlew bootJar --no-daemon
+      - name: Build container image
+        run: docker build --tag zip-da-property:${{ github.sha }} .
