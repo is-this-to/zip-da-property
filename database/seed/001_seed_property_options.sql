@@ -16,26 +16,26 @@ CREATE TEMPORARY TABLE tmp_property_option_seed
 INSERT INTO tmp_property_option_seed
     (option_code, option_name, option_category, display_order)
 VALUES
-    ('AIR_CONDITIONER',      '에어컨',       'APPLIANCE', 10),
-    ('REFRIGERATOR',         '냉장고',       'APPLIANCE', 20),
-    ('WASHING_MACHINE',      '세탁기',       'APPLIANCE', 30),
-    ('GAS_RANGE',            '가스레인지',   'APPLIANCE', 40),
-    ('MICROWAVE',            '전자레인지',   'APPLIANCE', 50),
-    ('INDUCTION',            '인덕션',       'APPLIANCE', 60),
-    ('TV',                   'TV',           'APPLIANCE', 70),
+    ('AIR_CONDITIONER',      '에어컨',           'APPLIANCE', 10),
+    ('REFRIGERATOR',         '냉장고',           'APPLIANCE', 20),
+    ('WASHING_MACHINE',      '세탁기',           'APPLIANCE', 30),
+    ('GAS_RANGE',            '가스레인지',       'APPLIANCE', 40),
+    ('MICROWAVE',            '전자레인지',       'APPLIANCE', 50),
 
-    ('BUILT_IN_WARDROBE',    '붙박이장',     'FURNITURE', 80),
-    ('SHOE_CABINET',         '신발장',       'FURNITURE', 90),
-    ('BED',                  '침대',         'FURNITURE', 100),
+    ('BUILT_IN_WARDROBE',    '붙박이장',         'FURNITURE', 60),
+    ('SHOE_CABINET',         '신발장',           'FURNITURE', 70),
 
-    ('BALCONY',              '베란다',       'STRUCTURE', 110),
+    ('BALCONY',              '베란다',           'STRUCTURE', 80),
 
-    ('ENTRANCE_SECURITY',    '현관 보안',    'SECURITY', 120),
+    ('ENTRANCE_SECURITY',    '현관 보안',        'SECURITY', 90),
 
-    ('INTERNET',             '인터넷',       'LIVING',    130),
-    ('BIDET',                '비데',         'LIVING',    140),
+    ('INTERNET',             '인터넷',           'LIVING', 100),
+    ('BIDET',                '비데',             'LIVING', 110),
+    ('PARKING_AVAILABLE',    '주차 가능',        'LIVING', 120),
+    ('ELEVATOR',             '엘리베이터 있음',  'LIVING', 130),
+    ('PET_ALLOWED',          '반려동물 가능',    'LIVING', 140),
 
-    ('LOAN_AVAILABLE',       '대출 가능',    'ETC',       150);
+    ('LOAN_AVAILABLE',       '대출 가능',        'ETC', 150);
 
 
 -- =========================================================
@@ -178,5 +178,48 @@ WHERE pto.deleted_at IS NULL
       'ROOM'
   );
 
+
+-- =========================================================
+-- 5. 최종 15개 정책에서 제외된 이전 옵션 비활성화
+--    기존 seed를 실행한 환경도 최종 활성 옵션 수를 15개로 맞춤
+-- =========================================================
+
+UPDATE property_type_option pto
+JOIN property_option_code poc
+    ON poc.option_code_id = pto.option_code_id
+SET
+    pto.updated_at = NOW(6),
+    pto.updated_by_member_id = NULL,
+    pto.updated_by_role = NULL,
+    pto.deleted_at = NOW(6),
+    pto.deleted_by_member_id = NULL,
+    pto.deleted_by_role = NULL,
+    pto.delete_reason = 'FINAL_OPTION_SEED_REPLACED',
+    pto.action_source = 'SYSTEM'
+WHERE pto.deleted_at IS NULL
+  AND poc.option_code IN (
+      'INDUCTION',
+      'TV',
+      'BED'
+  );
+
+UPDATE property_option_code
+SET
+    is_registration_enabled = 0,
+    is_active = 0,
+    updated_at = NOW(6),
+    updated_by_member_id = NULL,
+    updated_by_role = NULL,
+    deleted_at = NOW(6),
+    deleted_by_member_id = NULL,
+    deleted_by_role = NULL,
+    delete_reason = 'FINAL_OPTION_SEED_REPLACED',
+    action_source = 'SYSTEM'
+WHERE deleted_at IS NULL
+  AND option_code IN (
+      'INDUCTION',
+      'TV',
+      'BED'
+  );
 
 DROP TEMPORARY TABLE IF EXISTS tmp_property_option_seed;
