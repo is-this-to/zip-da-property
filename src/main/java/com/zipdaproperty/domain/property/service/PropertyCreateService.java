@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.apartment.service.ApartmentComplexValidationService;
 import com.zipdaproperty.domain.image.service.PropertyImageLinkService;
 import com.zipdaproperty.domain.option.service.PropertyOptionCommandService;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
@@ -118,6 +119,9 @@ public class PropertyCreateService {
     private final PropertyRegistrationRiskService
             propertyRegistrationRiskService;
 
+    private final ApartmentComplexValidationService
+            apartmentComplexValidationService;
+
     @Transactional
     public PropertyCreateResponse create(
             PropertyCreateCommand command,
@@ -153,6 +157,12 @@ public class PropertyCreateService {
 
         validateRegionMatch(
                 command.regionId(),
+                preparedAddress.regionId()
+        );
+
+        apartmentComplexValidationService.validateForProperty(
+                command.propertyType(),
+                command.apartmentComplexId(),
                 preparedAddress.regionId()
         );
 
