@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.apartment.service.ApartmentComplexValidationService;
 import com.zipdaproperty.domain.image.service.PropertyImageLinkService;
 import com.zipdaproperty.domain.option.command.PropertyOptionCreateCommand;
 import com.zipdaproperty.domain.option.service.PropertyOptionCommandService;
@@ -73,6 +74,8 @@ class PropertyCreateServiceTest {
             884700000000000001L;
 
     private static final Long REGION_ID = 53390L;
+
+    private static final Long APARTMENT_COMPLEX_ID = 15L;
 
     private static final Long AUTHOR_MEMBER_ID = 1001L;
 
@@ -152,6 +155,10 @@ class PropertyCreateServiceTest {
     private final PropertyRegistrationRiskService
             propertyRegistrationRiskService =
             mock(PropertyRegistrationRiskService.class);
+
+    private final ApartmentComplexValidationService
+            apartmentComplexValidationService =
+            mock(ApartmentComplexValidationService.class);
     private final ActorContext ownerContext =
             ActorContext.member(
                     AUTHOR_MEMBER_ID,
@@ -177,7 +184,8 @@ class PropertyCreateServiceTest {
                         propertyAddressService,
                         memberWritePermissionService,
                         propertyOptionCommandService,
-                        propertyRegistrationRiskService
+                        propertyRegistrationRiskService,
+                        apartmentComplexValidationService
                 );
 
         TransactionInterceptor interceptor =
@@ -265,6 +273,13 @@ class PropertyCreateServiceTest {
                         AUTHOR_MEMBER_ID,
                         ActorRole.USER,
                         MemberPermissionAction.PROPERTY_CREATE
+                );
+
+        verify(apartmentComplexValidationService)
+                .validateForProperty(
+                        PropertyType.APARTMENT,
+                        APARTMENT_COMPLEX_ID,
+                        REGION_ID
                 );
 
         order.verify(propertyImageLinkService)
@@ -882,7 +897,7 @@ class PropertyCreateServiceTest {
     ) {
         return new PropertyCreateCommand(
                 REGION_ID,
-                null,
+                APARTMENT_COMPLEX_ID,
                 publisherType,
                 PropertyType.APARTMENT,
                 TransactionType.SALE,

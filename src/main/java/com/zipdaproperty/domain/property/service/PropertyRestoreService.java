@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.apartment.service.ApartmentComplexValidationService;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.entity.Property;
@@ -54,6 +55,9 @@ public class PropertyRestoreService {
 
     private final PropertyKafkaEventPublisher
             propertyKafkaEventPublisher;
+
+    private final ApartmentComplexValidationService
+            apartmentComplexValidationService;
 
     @Transactional
     public PropertyRestoreResponse restore(
@@ -195,6 +199,19 @@ public class PropertyRestoreService {
                             .RESTORE_REFERENCE_INVALID,
                     "활성 Region을 찾을 수 없어 "
                             + "매물을 복구할 수 없습니다."
+            );
+        }
+
+        try {
+            apartmentComplexValidationService.validateForProperty(
+                    property.getPropertyType(),
+                    property.getApartmentComplexId(),
+                    property.getRegionId()
+            );
+        } catch (BusinessException exception) {
+            throw new BusinessException(
+                    CustomResponseCode.RESTORE_REFERENCE_INVALID,
+                    "아파트 단지 참조가 유효하지 않아 매물을 복구할 수 없습니다."
             );
         }
     }

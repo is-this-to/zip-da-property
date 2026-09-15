@@ -1,8 +1,10 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.apartment.service.ApartmentComplexValidationService;
 import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
 import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
+import com.zipdaproperty.domain.property.constant.PropertyType;
 import com.zipdaproperty.domain.property.constant.RevisionChangeScope;
 import com.zipdaproperty.domain.property.constant.RevisionChangeType;
 import com.zipdaproperty.domain.property.constant.TransactionStatus;
@@ -49,6 +51,8 @@ class PropertyRestoreServiceTest {
 
     private static final Long REGION_ID =
             53390L;
+
+    private static final Long APARTMENT_COMPLEX_ID = 15L;
 
     private static final Long ADMIN_MEMBER_ID =
             3003L;
@@ -97,6 +101,10 @@ class PropertyRestoreServiceTest {
             propertyKafkaEventPublisher =
             mock(PropertyKafkaEventPublisher.class);
 
+    private final ApartmentComplexValidationService
+            apartmentComplexValidationService =
+            mock(ApartmentComplexValidationService.class);
+
     private final PropertyRestoreService propertyRestoreService =
             new PropertyRestoreService(
                     propertyRepository,
@@ -105,7 +113,8 @@ class PropertyRestoreServiceTest {
                     propertyVersionPolicy,
                     objectMapper,
                     propertyAuditEventRecorder,
-                    propertyKafkaEventPublisher
+                    propertyKafkaEventPublisher,
+                    apartmentComplexValidationService
             );
 
     private final ActorContext adminContext =
@@ -223,6 +232,13 @@ class PropertyRestoreServiceTest {
 
         verify(regionRepository)
                 .findByRegionIdAndIsActiveTrue(
+                        REGION_ID
+                );
+
+        verify(apartmentComplexValidationService)
+                .validateForProperty(
+                        PropertyType.APARTMENT,
+                        APARTMENT_COMPLEX_ID,
                         REGION_ID
                 );
 
@@ -627,6 +643,17 @@ class PropertyRestoreServiceTest {
 
         when(property.getVersion())
                 .thenReturn(currentVersion);
+
+        when(property.getRegionId())
+                .thenReturn(REGION_ID);
+
+        when(property.getPropertyType())
+                .thenReturn(
+                        PropertyType.APARTMENT
+                );
+
+        when(property.getApartmentComplexId())
+                .thenReturn(APARTMENT_COMPLEX_ID);
 
         return property;
     }

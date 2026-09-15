@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.apartment.service.ApartmentComplexValidationService;
 import com.zipdaproperty.domain.image.service.PropertyImageSyncService;
 import com.zipdaproperty.domain.option.command.PropertyOptionCreateCommand;
 import com.zipdaproperty.domain.option.service.PropertyOptionCommandService;
@@ -76,6 +77,8 @@ class PropertyUpdateServiceTest {
 
     private static final Long REGION_ID = 53390L;
 
+    private static final Long APARTMENT_COMPLEX_ID = 15L;
+
     private static final Long AUTHOR_MEMBER_ID = 1001L;
 
     private static final Long OTHER_MEMBER_ID = 2002L;
@@ -140,6 +143,10 @@ class PropertyUpdateServiceTest {
             memberWritePermissionService =
             mock(MemberWritePermissionService.class);
 
+    private final ApartmentComplexValidationService
+            apartmentComplexValidationService =
+            mock(ApartmentComplexValidationService.class);
+
     private final PropertyOptionCommandService propertyOptionCommandService =
             mock(PropertyOptionCommandService.class);
 
@@ -159,7 +166,8 @@ class PropertyUpdateServiceTest {
                     propertyKafkaEventPublisher,
                     propertyAddressService,
                     propertyOptionCommandService,
-                    memberWritePermissionService
+                    memberWritePermissionService,
+                    apartmentComplexValidationService
             );
 
     private final ActorContext ownerContext =
@@ -262,6 +270,13 @@ class PropertyUpdateServiceTest {
                 preparedAddress,
                 ownerContext
         );
+
+        verify(apartmentComplexValidationService)
+                .validateForProperty(
+                        PropertyType.APARTMENT,
+                        APARTMENT_COMPLEX_ID,
+                        REGION_ID
+                );
     }
 
     @Test
@@ -1223,7 +1238,7 @@ class PropertyUpdateServiceTest {
                 .thenReturn(REGION_ID);
 
         when(property.getApartmentComplexId())
-                .thenReturn(null);
+                .thenReturn(APARTMENT_COMPLEX_ID);
 
         when(property.getPublisherType())
                 .thenReturn(PublisherType.DIRECT_OWNER);
@@ -1346,7 +1361,7 @@ class PropertyUpdateServiceTest {
         return new PropertyUpdateCommand(
                 requestedVersion,
                 REGION_ID,
-                null,
+                APARTMENT_COMPLEX_ID,
                 PropertyType.APARTMENT,
                 TransactionType.SALE,
                 500_000_000L,
