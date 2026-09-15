@@ -74,6 +74,8 @@ public class PropertyController {
                     등록된 매물은 공개 검수 대기 상태로 생성됩니다.
                     카카오 주소 결과의 법정동 코드와 좌표를 검증하고,
                     정확 위치와 지도 공개용 비식별 위치를 함께 저장합니다.
+                    아파트 매물은 활성 단지를 필수로 선택해야 하며,
+                    선택한 단지와 검증된 Region의 일치 여부를 확인합니다.
                     동일한 Idempotency-Key로 동일 요청을 반복하면
                     최초 요청의 응답을 재사용합니다.
                     저장 전에 주소·가격·등록자·이미지 checksum과
@@ -85,6 +87,7 @@ public class PropertyController {
                     CustomResponseCode.UNAUTHENTICATED,
                     CustomResponseCode.FORBIDDEN,
                     CustomResponseCode.INVALID_REQUEST,
+                    CustomResponseCode.NOT_FOUND_RESOURCE,
                     CustomResponseCode.INVALID_PRICE_COMBINATION,
                     CustomResponseCode.PROPERTY_CREATE_NOT_ALLOWED,
                     CustomResponseCode.PROPERTY_REGION_NOT_FOUND,
@@ -148,6 +151,7 @@ public class PropertyController {
                     수정하지 않고 VERSION_CONFLICT를 반환합니다.
                     address를 전달한 경우에만 정확 주소와 공개 위치를
                     다시 검증하고 변경합니다.
+                    최종 매물 유형·단지·Region의 논리 참조도 다시 검증합니다.
                     """
     )
     @CustomApiResponse({
@@ -476,7 +480,8 @@ public class PropertyController {
                     CS 관리자 또는 최고 관리자가
                     소프트 삭제된 매물을 복구합니다.
                     복구하기 전에 매물이 참조하는 Region이
-                    현재 활성 상태인지 논리적으로 검증합니다.
+                    현재 활성 상태인지 확인하고, 아파트 매물은 연결된 단지의
+                    활성 상태와 Region 일치 여부도 논리적으로 검증합니다.
                     If-Match 헤더와 요청 본문의 version은
                     반드시 동일해야 합니다.
                     """
