@@ -34,6 +34,11 @@ import com.zipdaproperty.global.id.TsidGenerator;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
@@ -53,6 +58,36 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PropertyVerificationServiceTest {
+
+    @Test
+    void submit_evidenceSaveFailureRollsBackLinkedFileTransaction() {
+        ActorContext owner = ActorContext.member(OWNER_ID, ActorRole.USER, "verification-rollback-test");
+        Property property = prepareSubmittableProperty();
+        PropertyFile file = mock(PropertyFile.class);
+        when(propertyRepository.findForVerificationChange(PROPERTY_ID)).thenReturn(Optional.of(property));
+        when(propertyFileRepository.findForVerificationLink(FILE_ID)).thenReturn(Optional.of(file));
+        when(file.getOwnerMemberId()).thenReturn(OWNER_ID);
+        when(file.getFilePurpose()).thenReturn(FilePurpose.VERIFICATION);
+        when(file.isVerificationCompleted()).thenReturn(true);
+        when(file.isReadyToLink()).thenReturn(true);
+        when(tsidGenerator.generate()).thenReturn(VERIFICATION_ID, EVIDENCE_ID);
+        when(verificationRepository.saveAndFlush(any(PropertyVerification.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(evidenceRepository.saveAll(any())).thenThrow(new IllegalStateException("evidence save failed"));
+
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+        ProxyFactory proxyFactory = new ProxyFactory(service);
+        proxyFactory.addAdvice(new TransactionInterceptor(
+                transactionManager, new AnnotationTransactionAttributeSource()));
+        PropertyVerificationService transactionalService = (PropertyVerificationService) proxyFactory.getProxy();
+
+        assertThatThrownBy(() -> transactionalService.submit(PROPERTY_ID, createSubmitRequest(), owner))
+                .isInstanceOf(IllegalStateException.class);
+        verify(file).markLinked(owner);
+        verify(transactionManager).rollback(transactionStatus);
+    }
 
     private static final Long PROPERTY_ID = 884685586571263701L;
     private static final Long VERIFICATION_ID = 884700000000000001L;
@@ -116,6 +151,7 @@ class PropertyVerificationServiceTest {
         when(file.getOwnerMemberId()).thenReturn(OWNER_ID);
         when(file.getFilePurpose()).thenReturn(FilePurpose.VERIFICATION);
         when(file.isVerificationCompleted()).thenReturn(true);
+        when(file.isReadyToLink()).thenReturn(true);
         when(propertyFileRepository.findForVerificationLink(FILE_ID)).thenReturn(Optional.of(file));
         when(tsidGenerator.generate()).thenReturn(VERIFICATION_ID, EVIDENCE_ID);
         when(verificationRepository.saveAndFlush(any(PropertyVerification.class)))
@@ -140,6 +176,7 @@ class PropertyVerificationServiceTest {
         verify(property).changeVerificationStatus(VerificationStatus.IN_REVIEW, owner);
         ArgumentCaptor<List<PropertyVerificationEvidence>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
         verify(evidenceRepository).saveAll(evidenceCaptor.capture());
+        verify(file).markLinked(owner);
         assertThat(evidenceCaptor.getValue()).hasSize(1);
         assertThat(evidenceCaptor.getValue().getFirst().getPropertyFileId()).isEqualTo(FILE_ID);
         verify(auditEventRecorder).recordPropertyAction(
