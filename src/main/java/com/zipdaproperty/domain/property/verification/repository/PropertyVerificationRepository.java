@@ -17,6 +17,10 @@ import java.util.Optional;
 
 public interface PropertyVerificationRepository extends JpaRepository<PropertyVerification, Long> {
 
+    Optional<PropertyVerification> findByPropertyVerificationIdAndDeletedAtIsNull(Long propertyVerificationId);
+
+    Optional<PropertyVerification> findTopByPropertyIdAndDeletedAtIsNullOrderBySubmittedAtDescPropertyVerificationIdDesc(Long propertyId);
+
     boolean existsByPropertyIdAndVerificationTypeAndStatusInAndDeletedAtIsNull(
             Long propertyId,
             PropertyVerificationType verificationType,

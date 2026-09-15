@@ -368,6 +368,16 @@ public class PropertyVerificationService {
             List<PropertyVerificationEvidenceRequest> requests,
             ActorContext actorContext
     ) {
+        for (PropertyVerificationEvidenceRequest request : requests.stream()
+                .sorted(Comparator.comparing(PropertyVerificationEvidenceRequest::propertyFileId))
+                .toList()) {
+            PropertyFile file = propertyFileRepository
+                    .findForVerificationLink(request.propertyFileId())
+                    .orElseThrow(() -> invalidEvidence("증빙 파일을 찾을 수 없습니다."));
+            if (file.isReadyToLink()) {
+                file.markLinked(actorContext);
+            }
+        }
         List<PropertyVerificationEvidence> evidence = requests.stream()
                 .map(request -> new PropertyVerificationEvidence(
                         tsidGenerator.generate(), verificationId, request.propertyFileId(),

@@ -16,6 +16,8 @@ import java.util.List;
 public interface PropertyVerificationEvidenceRepository
         extends JpaRepository<PropertyVerificationEvidence, Long> {
 
+    List<PropertyVerificationEvidence> findAllByPropertyVerificationIdAndDeletedAtIsNullOrderBySortOrderAscVerificationEvidenceIdAsc(Long verificationId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select evidence
