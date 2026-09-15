@@ -17,6 +17,7 @@ ENV JAVA_TOOL_OPTIONS="-Duser.timezone=Asia/Seoul"
 
 RUN useradd --system --uid 10001 --create-home appuser
 COPY --from=builder /workspace/build/libs/*.jar app.jar
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app
 
 USER appuser
 EXPOSE 8080
