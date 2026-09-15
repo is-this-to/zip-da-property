@@ -15,7 +15,7 @@ import java.io.IOException;
 import java.util.regex.Pattern;
 
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE) // 스프링에 존재하는 수많은 필터(시큐리티 필터 포함) 중에서 가장 먼저 실행
 public class TraceIdFilter extends OncePerRequestFilter {
 
     private static final Pattern TRACE_ID_PATTERN =
@@ -54,16 +54,18 @@ public class TraceIdFilter extends OncePerRequestFilter {
     }
 
     private String resolveTraceId(String traceIdHeader) {
+        // 1. 헤더에 번호가 아예 없거나 비어있으면 새로 발급
         if (traceIdHeader == null || traceIdHeader.isBlank()) {
             return TraceIdContext.generate();
         }
 
         String trimmedTraceId = traceIdHeader.trim();
 
+        // 2. 누군가 해킹이나 장난을 치려고 번호에 이상한 짓을 했는지 정규식으로 검사
         if (!TRACE_ID_PATTERN.matcher(trimmedTraceId).matches()) {
-            return TraceIdContext.generate();
+            return TraceIdContext.generate(); // 이상하면 새로 발급
         }
 
-        return trimmedTraceId;
+        return trimmedTraceId; // 정상이면 그대로 사용
     }
 }

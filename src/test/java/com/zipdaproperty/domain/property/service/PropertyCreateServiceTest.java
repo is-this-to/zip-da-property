@@ -1,0 +1,923 @@
+package com.zipdaproperty.domain.property.service;
+
+import com.zipdaproperty.domain.image.service.PropertyImageLinkService;
+import com.zipdaproperty.domain.option.command.PropertyOptionCreateCommand;
+import com.zipdaproperty.domain.option.service.PropertyOptionCommandService;
+import com.zipdaproperty.domain.property.audit.constant.PropertyAuditActionCode;
+import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorder;
+import com.zipdaproperty.domain.property.command.PropertyCreateCommand;
+import com.zipdaproperty.domain.property.command.PropertyAddressCommand;
+import com.zipdaproperty.domain.property.constant.PropertyType;
+import com.zipdaproperty.domain.property.constant.PublisherType;
+import com.zipdaproperty.domain.property.constant.TransactionType;
+import com.zipdaproperty.domain.property.entity.Property;
+import com.zipdaproperty.domain.property.entity.PropertyPublisherSnapshot;
+import com.zipdaproperty.domain.property.entity.PropertyRevision;
+import com.zipdaproperty.domain.property.event.PropertyKafkaEventPublisher;
+import com.zipdaproperty.domain.property.event.constant.PropertyEventType;
+import com.zipdaproperty.domain.property.model.PreparedPropertyAddress;
+import com.zipdaproperty.domain.property.member.service.MemberWritePermissionService;
+import com.zipdaproperty.domain.property.member.constant.MemberPermissionAction;
+import com.zipdaproperty.domain.property.repository.PropertyPublisherSnapshotRepository;
+import com.zipdaproperty.domain.property.repository.PropertyRepository;
+import com.zipdaproperty.domain.property.repository.PropertyRevisionRepository;
+import com.zipdaproperty.domain.property.repository.PropertyStatusHistoryRepository;
+import com.zipdaproperty.domain.property.response.PropertyCreateResponse;
+import com.zipdaproperty.domain.property.risk.constant.PropertyRiskDecision;
+import com.zipdaproperty.domain.property.risk.model.PropertyRiskAssessmentResult;
+import com.zipdaproperty.domain.property.risk.service.PropertyRegistrationRiskService;
+import com.zipdaproperty.domain.region.entity.Region;
+import com.zipdaproperty.domain.region.repository.RegionRepository;
+import com.zipdaproperty.global.context.ActorContext;
+import com.zipdaproperty.global.context.constant.ActorRole;
+import com.zipdaproperty.global.error.custom.BusinessException;
+import com.zipdaproperty.global.id.TsidGenerator;
+import com.zipdaproperty.global.response.constant.CustomResponseCode;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import tools.jackson.databind.ObjectMapper;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+class PropertyCreateServiceTest {
+
+    private static final Long PROPERTY_ID =
+            884700000000000001L;
+
+    private static final Long REGION_ID = 53390L;
+
+    private static final Long AUTHOR_MEMBER_ID = 1001L;
+
+    private static final Long INITIAL_VERSION = 0L;
+
+    private static final Long REVISION_ID = 1L;
+
+    private static final List<Long> FILE_IDS =
+            List.of(
+                    1003L,
+                    1001L,
+                    1002L
+            );
+
+    private static final String CREATE_REASON =
+            "매물 등록으로 초기 상태가 설정되었습니다.";
+
+    private final PropertyRepository propertyRepository =
+            mock(PropertyRepository.class);
+
+    private final PropertyRevisionRepository
+            propertyRevisionRepository =
+            mock(PropertyRevisionRepository.class);
+
+    private final PropertyStatusHistoryRepository
+            propertyStatusHistoryRepository =
+            mock(PropertyStatusHistoryRepository.class);
+
+    private final PropertyPublisherSnapshotRepository
+            propertyPublisherSnapshotRepository =
+            mock(PropertyPublisherSnapshotRepository.class);
+
+    private final RegionRepository regionRepository =
+            mock(RegionRepository.class);
+
+    private final PropertyPricePolicy propertyPricePolicy =
+            mock(PropertyPricePolicy.class);
+
+    private final TsidGenerator tsidGenerator =
+            mock(TsidGenerator.class);
+
+    private final ObjectMapper objectMapper =
+            mock(ObjectMapper.class);
+
+    private final PropertyImageLinkService
+            propertyImageLinkService =
+            mock(PropertyImageLinkService.class);
+
+    private final PropertyAuditEventRecorder
+            propertyAuditEventRecorder =
+            mock(PropertyAuditEventRecorder.class);
+
+    private final PropertyKafkaEventPublisher
+            propertyKafkaEventPublisher =
+            mock(PropertyKafkaEventPublisher.class);
+
+    private final PlatformTransactionManager
+            transactionManager =
+            mock(PlatformTransactionManager.class);
+
+    private final SimpleTransactionStatus
+            transactionStatus =
+            new SimpleTransactionStatus();
+
+    private PropertyCreateService propertyCreateService;
+
+    private final PropertyOptionCommandService propertyOptionCommandService =
+            mock(PropertyOptionCommandService.class);
+
+    private final PropertyAddressService propertyAddressService =
+            mock(PropertyAddressService.class);
+
+    private final MemberWritePermissionService
+            memberWritePermissionService =
+            mock(MemberWritePermissionService.class);
+
+    private final PropertyRegistrationRiskService
+            propertyRegistrationRiskService =
+            mock(PropertyRegistrationRiskService.class);
+    private final ActorContext ownerContext =
+            ActorContext.member(
+                    AUTHOR_MEMBER_ID,
+                    ActorRole.USER,
+                    "property-create-test-owner"
+            );
+
+    @BeforeEach
+    void setUp() {
+        PropertyCreateService target =
+                new PropertyCreateService(
+                        propertyRepository,
+                        propertyRevisionRepository,
+                        propertyStatusHistoryRepository,
+                        propertyPublisherSnapshotRepository,
+                        regionRepository,
+                        propertyPricePolicy,
+                        tsidGenerator,
+                        objectMapper,
+                        propertyImageLinkService,
+                        propertyAuditEventRecorder,
+                        propertyKafkaEventPublisher,
+                        propertyAddressService,
+                        memberWritePermissionService,
+                        propertyOptionCommandService,
+                        propertyRegistrationRiskService
+                );
+
+        TransactionInterceptor interceptor =
+                new TransactionInterceptor();
+
+        interceptor.setTransactionManager(
+                transactionManager
+        );
+
+        interceptor.setTransactionAttributeSource(
+                new AnnotationTransactionAttributeSource()
+        );
+
+        ProxyFactory proxyFactory =
+                new ProxyFactory(target);
+
+        proxyFactory.addAdvice(interceptor);
+
+        propertyCreateService =
+                (PropertyCreateService) proxyFactory.getProxy();
+
+        when(transactionManager.getTransaction(any()))
+                .thenReturn(transactionStatus);
+
+        when(propertyRegistrationRiskService.evaluateAndRecord(
+                any(),
+                any(),
+                any(),
+                any()
+        )).thenReturn(
+                new PropertyRiskAssessmentResult(
+                        BigDecimal.ZERO,
+                        PropertyRiskDecision.PASS,
+                        List.of(),
+                        null
+                )
+        );
+    }
+
+    @Test
+    void create_validOwnerRequest_savesPropertyImagesAndRelatedRecords() {
+        PropertyCreateCommand command =
+                createValidCommand();
+
+        PreparedPropertyAddress preparedAddress =
+                stubValidCreatePersistence();
+
+        PropertyCreateResponse response =
+                propertyCreateService.create(
+                        command,
+                        ownerContext
+                );
+
+        assertThat(response.propertyId())
+                .isEqualTo(PROPERTY_ID);
+
+        assertThat(response.version())
+                .isEqualTo(INITIAL_VERSION);
+
+        verify(propertyPricePolicy)
+                .validate(
+                        command.transactionType(),
+                        command.salePrice(),
+                        command.deposit(),
+                        command.monthlyRent()
+                );
+
+        InOrder order =
+                inOrder(
+                        propertyRepository,
+                        propertyImageLinkService,
+                        propertyAddressService,
+                        propertyRevisionRepository,
+                        propertyOptionCommandService,
+                        propertyStatusHistoryRepository,
+                        propertyPublisherSnapshotRepository,
+                        transactionManager
+                );
+
+        order.verify(propertyRepository)
+                .saveAndFlush(any(Property.class));
+
+        verify(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_CREATE
+                );
+
+        order.verify(propertyImageLinkService)
+                .linkImages(
+                        eq(PROPERTY_ID),
+                        same(FILE_IDS),
+                        same(ownerContext)
+                );
+
+        order.verify(propertyAddressService)
+                .create(
+                        any(Property.class),
+                        same(preparedAddress),
+                        same(ownerContext)
+                );
+
+        order.verify(propertyRevisionRepository)
+                .save(any(PropertyRevision.class));
+
+        order.verify(propertyOptionCommandService).createOptions(
+                PROPERTY_ID, REVISION_ID, command.propertyType(), command.options(), "options", ownerContext);
+
+        order.verify(propertyStatusHistoryRepository)
+                .saveAll(anyList());
+
+        order.verify(propertyPublisherSnapshotRepository)
+                .save(any(PropertyPublisherSnapshot.class));
+
+        order.verify(transactionManager)
+                .commit(transactionStatus);
+
+        verify(transactionManager, never())
+                .rollback(any());
+
+        ArgumentCaptor<Instant> auditOccurredAtCaptor =
+                ArgumentCaptor.forClass(Instant.class);
+
+        verify(propertyAuditEventRecorder)
+                .recordPropertyAction(
+                        eq(PROPERTY_ID),
+                        eq(
+                                PropertyAuditActionCode
+                                        .PROPERTY_CREATED
+                        ),
+                        eq(CREATE_REASON),
+                        isNull(),
+                        auditOccurredAtCaptor.capture(),
+                        same(ownerContext)
+                );
+
+        ArgumentCaptor<Instant> kafkaOccurredAtCaptor =
+                ArgumentCaptor.forClass(Instant.class);
+
+        verify(propertyKafkaEventPublisher)
+                .publishAfterCommit(
+                        eq(PROPERTY_ID),
+                        eq(INITIAL_VERSION),
+                        eq(
+                                PropertyEventType
+                                        .PROPERTY_CREATED
+                        ),
+                        argThat(payload ->
+                                PROPERTY_ID
+                                        .toString()
+                                        .equals(
+                                                payload.get(
+                                                        "propertyId"
+                                                )
+                                        )
+                                        && INITIAL_VERSION.equals(
+                                        payload.get(
+                                                "version"
+                                        )
+                                )
+                                        && REGION_ID
+                                        .toString()
+                                        .equals(
+                                                payload.get(
+                                                        "regionId"
+                                                )
+                                        )
+                                        && payload.get("deposit")
+                                        == null
+                                        && payload.get(
+                                        "monthlyRent"
+                                ) == null
+                        ),
+                        kafkaOccurredAtCaptor.capture(),
+                        same(ownerContext)
+                );
+
+        assertThat(kafkaOccurredAtCaptor.getValue())
+                .isEqualTo(
+                        auditOccurredAtCaptor.getValue()
+                );
+    }
+
+    @Test
+    void create_validTenantRequest_savesDirectTenantProperty() {
+        PropertyCreateCommand command =
+                createValidCommand(
+                        PublisherType.DIRECT_TENANT
+                );
+
+        stubValidCreatePersistence();
+
+        PropertyCreateResponse response =
+                propertyCreateService.create(
+                        command,
+                        ownerContext
+                );
+
+        assertThat(response.propertyId())
+                .isEqualTo(PROPERTY_ID);
+
+        verify(propertyRepository)
+                .saveAndFlush(
+                        argThat(property ->
+                                property.getPublisherType()
+                                        == PublisherType.DIRECT_TENANT
+                        )
+                );
+
+        verify(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_CREATE
+                );
+
+        verify(transactionManager)
+                .commit(transactionStatus);
+    }
+
+    @Test
+    void create_imageLinkFailure_rollsBackAndSkipsRelatedRecords() {
+        PropertyCreateCommand command =
+                createValidCommand();
+
+        stubValidCreatePersistence();
+
+        BusinessException failure =
+                new BusinessException(
+                        CustomResponseCode.INVALID_REQUEST,
+                        "이미지 연결 실패"
+                );
+
+        doThrow(failure)
+                .when(propertyImageLinkService)
+                .linkImages(
+                        eq(PROPERTY_ID),
+                        same(FILE_IDS),
+                        same(ownerContext)
+                );
+
+        assertThatThrownBy(
+                () -> propertyCreateService.create(
+                        command,
+                        ownerContext
+                )
+        ).isSameAs(failure);
+
+        verify(propertyRepository)
+                .saveAndFlush(any(Property.class));
+
+        verify(propertyImageLinkService)
+                .linkImages(
+                        eq(PROPERTY_ID),
+                        same(FILE_IDS),
+                        same(ownerContext)
+                );
+
+        verifyNoInteractions(
+                propertyRevisionRepository,
+                propertyStatusHistoryRepository,
+                propertyPublisherSnapshotRepository,
+                propertyAuditEventRecorder,
+                propertyKafkaEventPublisher
+        );
+
+        verify(transactionManager)
+                .rollback(transactionStatus);
+
+        verify(transactionManager, never())
+                .commit(any());
+    }
+
+    @Test
+    void create_snapshotFailureAfterImageLink_rollsBackRegistration() {
+        PropertyCreateCommand command =
+                createValidCommand();
+
+        stubValidCreatePersistence();
+
+        IllegalStateException failure =
+                new IllegalStateException(
+                        "스냅샷 저장 실패"
+                );
+
+        when(
+                propertyPublisherSnapshotRepository.save(
+                        any(PropertyPublisherSnapshot.class)
+                )
+        ).thenThrow(failure);
+
+        assertThatThrownBy(
+                () -> propertyCreateService.create(
+                        command,
+                        ownerContext
+                )
+        ).isSameAs(failure);
+
+        verify(propertyImageLinkService)
+                .linkImages(
+                        eq(PROPERTY_ID),
+                        same(FILE_IDS),
+                        same(ownerContext)
+                );
+
+        verify(propertyRevisionRepository)
+                .save(any(PropertyRevision.class));
+
+        verify(propertyStatusHistoryRepository)
+                .saveAll(anyList());
+
+        verify(propertyPublisherSnapshotRepository)
+                .save(any(PropertyPublisherSnapshot.class));
+
+        verifyNoInteractions(
+                propertyAuditEventRecorder,
+                propertyKafkaEventPublisher
+        );
+
+        verify(transactionManager)
+                .rollback(transactionStatus);
+
+        verify(transactionManager, never())
+                .commit(any());
+    }
+
+    @Test
+    void create_inactiveRegion_throwsAndDoesNotRecordEvents() {
+        PropertyCreateCommand command =
+                createValidCommand();
+
+        when(
+                regionRepository
+                        .findByRegionIdAndIsActiveTrue(REGION_ID)
+        ).thenReturn(Optional.empty());
+
+        assertThatThrownBy(
+                () -> propertyCreateService.create(
+                        command,
+                        ownerContext
+                )
+        ).isInstanceOf(BusinessException.class);
+
+        verify(propertyRepository, never())
+                .saveAndFlush(any(Property.class));
+
+        verify(propertyImageLinkService, never())
+                .linkImages(
+                        any(),
+                        anyList(),
+                        any()
+                );
+
+        verify(propertyAuditEventRecorder, never())
+                .recordPropertyAction(
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any()
+                );
+
+        verify(propertyKafkaEventPublisher, never())
+                .publishAfterCommit(
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any()
+                );
+
+        verify(transactionManager)
+                .rollback(transactionStatus);
+
+        verify(transactionManager, never())
+                .commit(any());
+    }
+
+    @Test
+    void create_roleAndPublisherTypeMismatch_throwsAndDoesNotSave() {
+        PropertyCreateCommand command =
+                createValidCommand();
+
+        ActorContext agentContext =
+                ActorContext.member(
+                        2002L,
+                        ActorRole.AGENT,
+                        "property-create-test-agent"
+                );
+
+        assertThatThrownBy(
+                () -> propertyCreateService.create(
+                        command,
+                        agentContext
+                )
+        ).isInstanceOf(BusinessException.class);
+
+        verify(regionRepository, never())
+                .findByRegionIdAndIsActiveTrue(any());
+
+        verify(propertyRepository, never())
+                .saveAndFlush(any(Property.class));
+
+        verify(propertyImageLinkService, never())
+                .linkImages(
+                        any(),
+                        anyList(),
+                        any()
+                );
+
+        verify(propertyAuditEventRecorder, never())
+                .recordPropertyAction(
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any()
+                );
+
+        verify(propertyKafkaEventPublisher, never())
+                .publishAfterCommit(
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any()
+                );
+
+        verify(transactionManager)
+                .rollback(transactionStatus);
+
+        verify(transactionManager, never())
+                .commit(any());
+    }
+
+    @Test
+    void create_agentWithDirectTenant_throwsAndDoesNotSave() {
+        PropertyCreateCommand command =
+                createValidCommand(
+                        PublisherType.DIRECT_TENANT
+                );
+
+        ActorContext agentContext =
+                ActorContext.member(
+                        2002L,
+                        ActorRole.AGENT,
+                        "property-create-tenant-role-test"
+                );
+
+        assertThatThrownBy(
+                () -> propertyCreateService.create(
+                        command,
+                        agentContext
+                )
+        ).isInstanceOf(BusinessException.class);
+
+        verify(regionRepository, never())
+                .findByRegionIdAndIsActiveTrue(any());
+
+        verify(propertyRepository, never())
+                .saveAndFlush(any(Property.class));
+
+        verify(transactionManager)
+                .rollback(transactionStatus);
+
+        verify(transactionManager, never())
+                .commit(any());
+    }
+
+    @Test
+    void create_blockedByRiskAssessment_doesNotPersistProperty() {
+        PropertyCreateCommand command = createValidCommand();
+        PreparedPropertyAddress preparedAddress =
+                stubValidCreatePersistence();
+
+        when(propertyRegistrationRiskService.evaluateAndRecord(
+                PROPERTY_ID,
+                command,
+                preparedAddress,
+                ownerContext
+        )).thenReturn(
+                new PropertyRiskAssessmentResult(
+                        BigDecimal.valueOf(90),
+                        PropertyRiskDecision.BLOCKED,
+                        List.of(),
+                        null
+                )
+        );
+
+        assertThatThrownBy(() -> propertyCreateService.create(
+                command,
+                ownerContext
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("customResponseCode")
+                .isEqualTo(
+                        CustomResponseCode
+                                .PROPERTY_REGISTRATION_RISK_BLOCKED
+                );
+
+        verify(propertyRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(
+                propertyImageLinkService,
+                propertyRevisionRepository,
+                propertyOptionCommandService,
+                propertyStatusHistoryRepository,
+                propertyPublisherSnapshotRepository,
+                propertyAuditEventRecorder,
+                propertyKafkaEventPublisher
+        );
+    }
+
+    @Test
+    void create_exactDuplicate_usesDuplicateResponseCode() {
+        PropertyCreateCommand command = createValidCommand();
+        PreparedPropertyAddress preparedAddress =
+                stubValidCreatePersistence();
+
+        when(propertyRegistrationRiskService.evaluateAndRecord(
+                PROPERTY_ID,
+                command,
+                preparedAddress,
+                ownerContext
+        )).thenReturn(
+                new PropertyRiskAssessmentResult(
+                        BigDecimal.valueOf(100),
+                        PropertyRiskDecision.BLOCKED,
+                        List.of(
+                                com.zipdaproperty.domain.property.risk
+                                        .constant.PropertyRiskRuleCode
+                                        .SAME_ADDRESS_IMAGE
+                        ),
+                        200L
+                )
+        );
+
+        assertThatThrownBy(() -> propertyCreateService.create(
+                command,
+                ownerContext
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("customResponseCode")
+                .isEqualTo(
+                        CustomResponseCode.PROPERTY_DUPLICATE_DETECTED
+                );
+
+        verify(propertyRepository, never()).saveAndFlush(any());
+    }
+
+    private PreparedPropertyAddress stubValidCreatePersistence() {
+        when(
+                regionRepository
+                        .findByRegionIdAndIsActiveTrue(REGION_ID)
+        ).thenReturn(
+                Optional.of(mock(Region.class))
+        );
+
+        when(tsidGenerator.generate())
+                .thenReturn(PROPERTY_ID);
+
+        PreparedPropertyAddress preparedAddress =
+                mock(PreparedPropertyAddress.class);
+
+        when(preparedAddress.regionId())
+                .thenReturn(REGION_ID);
+
+        when(
+                propertyAddressService.prepare(
+                        eq(PROPERTY_ID),
+                        any(PropertyAddressCommand.class)
+                )
+        ).thenReturn(preparedAddress);
+
+        when(
+                propertyRepository.saveAndFlush(
+                        any(Property.class)
+                )
+        ).thenAnswer(invocation -> {
+            Property property =
+                    invocation.getArgument(0);
+
+            ReflectionTestUtils.setField(
+                    property,
+                    "version",
+                    INITIAL_VERSION
+            );
+
+            return property;
+        });
+
+        when(
+                propertyRevisionRepository.save(
+                        any(PropertyRevision.class)
+                )
+        ).thenAnswer(invocation -> {
+            PropertyRevision revision =
+                    invocation.getArgument(0);
+
+            ReflectionTestUtils.setField(
+                    revision,
+                    "propertyRevisionId",
+                    REVISION_ID
+            );
+
+            return revision;
+        });
+
+        when(objectMapper.writeValueAsString(any()))
+                .thenReturn("{}");
+
+        return preparedAddress;
+    }
+
+    @Test
+    void create_memberPermissionDenied_doesNotSave() {
+        PropertyCreateCommand command = createValidCommand();
+
+        doThrow(new BusinessException(
+                CustomResponseCode.MEMBER_PERMISSION_DENIED,
+                "권한 없음"
+        )).when(memberWritePermissionService)
+                .validate(
+                        AUTHOR_MEMBER_ID,
+                        ActorRole.USER,
+                        MemberPermissionAction.PROPERTY_CREATE
+                );
+
+        assertThatThrownBy(() ->
+                propertyCreateService.create(
+                        command,
+                        ownerContext
+                )
+        )
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception ->
+                        ((BusinessException) exception)
+                                .getCustomResponseCode()
+                )
+                .isEqualTo(
+                        CustomResponseCode.MEMBER_PERMISSION_DENIED
+                );
+
+        verify(propertyRepository, never())
+                .saveAndFlush(any(Property.class));
+        verify(propertyRevisionRepository, never())
+                .save(any(PropertyRevision.class));
+    }
+
+    private PropertyCreateCommand createValidCommand() {
+        return createValidCommand(
+                PublisherType.DIRECT_OWNER
+        );
+    }
+
+    private PropertyCreateCommand createValidCommand(
+            PublisherType publisherType
+    ) {
+        return createValidCommand(publisherType, List.of(new PropertyOptionCreateCommand("PARKING", "2")));
+    }
+
+    @Test
+    void create_emptyOptions_passesEmptyListToOptionService() {
+        stubValidCreatePersistence();
+        PropertyCreateCommand command = createValidCommand(PublisherType.DIRECT_OWNER, List.of());
+        propertyCreateService.create(command, ownerContext);
+        verify(propertyOptionCommandService).createOptions(
+                PROPERTY_ID, REVISION_ID, PropertyType.APARTMENT, List.of(), "options", ownerContext);
+    }
+
+    @Test
+    void create_optionFailure_rollsBackTransactionAfterRevisionAndSkipsEvents() {
+        stubValidCreatePersistence();
+        PropertyCreateCommand command = createValidCommand();
+        BusinessException failure = new BusinessException(CustomResponseCode.INVALID_REQUEST, "옵션 검증 실패");
+        doThrow(failure).when(propertyOptionCommandService).createOptions(
+                PROPERTY_ID, REVISION_ID, command.propertyType(), command.options(), "options", ownerContext);
+
+        assertThatThrownBy(() -> propertyCreateService.create(command, ownerContext)).isSameAs(failure);
+
+        InOrder order = inOrder(propertyRepository, propertyImageLinkService, propertyAddressService,
+                propertyRevisionRepository, propertyOptionCommandService, transactionManager);
+        order.verify(propertyRepository).saveAndFlush(any(Property.class));
+        order.verify(propertyImageLinkService).linkImages(PROPERTY_ID, FILE_IDS, ownerContext);
+        order.verify(propertyAddressService).create(any(Property.class), any(), eq(ownerContext));
+        order.verify(propertyRevisionRepository).save(any(PropertyRevision.class));
+        order.verify(propertyOptionCommandService).createOptions(
+                PROPERTY_ID, REVISION_ID, command.propertyType(), command.options(), "options", ownerContext);
+        order.verify(transactionManager).rollback(transactionStatus);
+        verify(transactionManager, never()).commit(any());
+        verifyNoInteractions(propertyStatusHistoryRepository, propertyPublisherSnapshotRepository,
+                propertyAuditEventRecorder, propertyKafkaEventPublisher);
+    }
+
+    private PropertyCreateCommand createValidCommand(
+            PublisherType publisherType,
+            List<PropertyOptionCreateCommand> options
+    ) {
+        return new PropertyCreateCommand(
+                REGION_ID,
+                null,
+                publisherType,
+                PropertyType.APARTMENT,
+                TransactionType.SALE,
+                500_000_000L,
+                null,
+                null,
+                150_000L,
+                new BigDecimal("84.99"),
+                new BigDecimal("59.99"),
+                3,
+                1,
+                5,
+                20,
+                "중층",
+                "남향",
+                LocalDate.of(
+                        2020,
+                        1,
+                        1
+                ),
+                "공동주택",
+                true,
+                true,
+                false,
+                "Kafka 등록 테스트 매물",
+                "매물 등록과 감사 및 Kafka 발행을 검증합니다.",
+                FILE_IDS,
+                new PropertyAddressCommand(
+                        "대구 수성구 달구벌대로 2450",
+                        "대구광역시 수성구 범어동 123",
+                        "2726010100",
+                        new BigDecimal("128.625123"),
+                        new BigDecimal("35.859321")
+                ),
+                options
+        );
+    }
+}

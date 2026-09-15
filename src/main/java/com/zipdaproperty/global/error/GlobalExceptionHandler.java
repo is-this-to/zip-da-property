@@ -8,8 +8,12 @@ import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -66,6 +70,21 @@ public class GlobalExceptionHandler {
                 "{}: invalid parameter={}",
                 CustomResponseCode.INVALID_REQUEST.name(),
                 exception.getName()
+        );
+
+        return generateErrorResponse(
+                CustomResponseCode.INVALID_REQUEST
+        );
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<GlobalResponseDTO<Void>> handleMissingRequestParameterException(
+            MissingServletRequestParameterException exception
+    ) {
+        log.debug(
+                "{}: missing parameter={}",
+                CustomResponseCode.INVALID_REQUEST.name(),
+                exception.getParameterName()
         );
 
         return generateErrorResponse(
@@ -161,6 +180,36 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<GlobalResponseDTO<Void>> handleHttpRequestMethodNotSupportedException(
+            HttpRequestMethodNotSupportedException exception
+    ) {
+        log.debug(
+                "{}: method={}",
+                CustomResponseCode.METHOD_NOT_ALLOWED.name(),
+                exception.getMethod()
+        );
+
+        return generateErrorResponse(
+                CustomResponseCode.METHOD_NOT_ALLOWED
+        );
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<GlobalResponseDTO<Void>> handleOptimisticLockingFailureException(
+            OptimisticLockingFailureException exception
+    ) {
+        log.warn(
+                "{}: {}",
+                CustomResponseCode.VERSION_CONFLICT.name(),
+                exception.getMessage()
+        );
+
+        return generateErrorResponse(
+                CustomResponseCode.VERSION_CONFLICT
+        );
+    }
+
     @ExceptionHandler(DuplicateKeyException.class)
     public ResponseEntity<GlobalResponseDTO<Void>> handleDuplicateKeyException(
             DuplicateKeyException exception
@@ -189,6 +238,20 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<GlobalResponseDTO<Void>> handleAccessDeniedException(
+            AccessDeniedException exception
+    ) {
+        log.warn(
+                "{}: access denied",
+                CustomResponseCode.FORBIDDEN.name()
+        );
+
+        return generateErrorResponse(
+                CustomResponseCode.FORBIDDEN
+        );
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<GlobalResponseDTO<Void>> handleException(
             Exception exception
@@ -201,5 +264,6 @@ public class GlobalExceptionHandler {
         return generateErrorResponse(
                 CustomResponseCode.SYSTEM_ERROR
         );
+
     }
 }
