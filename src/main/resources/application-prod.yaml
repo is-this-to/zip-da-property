@@ -52,6 +52,17 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
+# health check
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true  # liveness/readiness 하위 경로 활성화 (필수)
+  endpoints:
+    web:
+      exposure:
+        include: health  # health 엔드포인트 웹 노출
+
 property:
   list:
     cursor:
