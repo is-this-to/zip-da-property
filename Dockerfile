@@ -1,24 +1,14 @@
-FROM eclipse-temurin:21-jdk-jammy AS builder
-WORKDIR /workspace
-
-COPY gradlew ./
-COPY gradle ./gradle
-COPY build.gradle settings.gradle ./
-RUN chmod +x gradlew && ./gradlew dependencies --no-daemon
-
-COPY src ./src
-RUN ./gradlew bootJar --no-daemon -x test
-
-FROM eclipse-temurin:21-jre-jammy
+# --- 1단계: 빌드 ---
+FROM gradle:8-jdk21-alpine AS builder
 WORKDIR /app
+COPY . .
+RUN gradle bootJar --no-daemon -x test
 
+# --- 2단계: 실행 ---
+FROM eclipse-temurin:21-jre
+WORKDIR /app
 ENV TZ=Asia/Seoul
-ENV JAVA_TOOL_OPTIONS="-Duser.timezone=Asia/Seoul"
-
-RUN useradd --system --uid 10001 --create-home appuser
-COPY --from=builder /workspace/build/libs/*.jar app.jar
-RUN mkdir -p /app/logs && chown -R appuser:appuser /app
-
-USER appuser
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+COPY --from=builder /app/build/libs/*.jar app.jar
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+CMD ["java", "-jar", "app.jar"]

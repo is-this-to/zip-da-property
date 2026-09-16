@@ -1,0 +1,75 @@
+# Actions 탭 목록에 표시될 워크플로우명(자유롭게 지정 가능)
+name: CLIENT Build And Deploy
+
+# 이벤트 트리거 정의
+on:
+  push:
+    branches: [main]
+
+env:
+  # ghcr.io에 올릴 이미지명 설정
+  IMAGE_NAME: zip-da-property
+  # 매니페스트 작업 디렉토리
+  MANIFEST_WORK_DIR: manifests
+  # 매니페스트을 올릴 대상 레포
+  MANIFEST_REPO: is-this-to/zip-da-k8s-manifest
+  # 해당 매니페스트 레파지토리의 경로
+  MANIFEST_PATH: zip-da-property
+
+# 해당 워크플로우가 실행 중 GITHUB_TOKEN에 부여할 권한 설정
+permissions:
+  # 해당 레포 코드를 checkout하기 위한 최소 조건
+  contents: read
+  # ghcr.io(Github Packages)에 이미지를 push하기위한 권한
+  packages: write
+
+jobs:
+  # job의 id(임의로 지정 가능, actions 로그에 표시)
+  build-and-push:
+    # 해당 job을 실행할 GitHub 호스팅 러너의 OS 이미지
+    runs-on: ubuntu-22.04
+    steps:
+      # Actions 로그에 표시될 step명
+      - name: Checkout
+        # 현재 레포 코드를 러너로 내려받는 공식 액션
+        uses: actions/checkout@v7
+      - name: Login to ghcr.io
+        # Docker 레지스트리 로그인을 대신 처리해주는 공식 앤션
+        uses: docker/login-action@v4
+        with:
+          # 로그인할 대상 레지스트리 주소
+          registry: ghcr.io
+          # 이 워크플로우를 트리거한, 사용자의 GitHubId
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push image
+        # 아래 셸 명령들을 순서대로 실행
+        # 이미지 전체 경로 조립: ghcr.io/계정명/이미지이름 (계정명은 반드시 소문자로 설정)
+        # 이번 워크플로우 실행 번호를 태그로 사용해 빌드 (이때, env 값들도 arg로 추가)
+        # 위에서 빌드한 이미지를 ghcr.io로 push
+        run: |
+          IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/$IMAGE_NAME
+          docker build -t $IMAGE:$GITHUB_RUN_NUMBER .
+          docker push $IMAGE:$GITHUB_RUN_NUMBER
+      #  k8s manifest 배포 작업
+      - name: Checkout zip-da-k8s-manifest
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.MANIFEST_REPO}}         # pull 받을 대상 레포
+          token: ${{ secrets.MANIFEST_REPO_TOKEN }}   # 별도로 생성한 메니패스트 레포를 토큰을 세팅(Organization > Settings > secrets and variables 에 셋팅 되어 있음)
+          path: ${{ env.MANIFEST_WORK_DIR }}    # 레파지토리를 받아서 작업할 디렉토리 지정
+      - name: update image tag
+        # 위 build 스템과 동일하게 이미지 경로 재조립
+        # k8s-manifests 안에서 이 서비스 폴더로 이동 (자기 폴다만 건드림)
+        # deployment.yaml의 image 태그 줄을 방금 push한 태그로 치환
+        # 커밋 작성자 이메일 (자유롭게 지정 가능한 값)
+        # 변경된 deployment.yaml 커밋
+        # k8s-manifests에 push -> ArgoCD가 감지해 자동 배포
+        run: |
+          IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/$IMAGE_NAME
+          cd $MANIFEST_WORK_DIR/$MANIFEST_PATH
+          sed -i "s|image: ${IMAGE}:.*|image: ${IMAGE}:${GITHUB_RUN_NUMBER}|" deployment.yaml
+          git config user.email "actions@github.com"
+          git config user.name "Github Actions"
+          git commit -am "Deploy ${IMAGE_NAME}:${GITHUB_RUN_NUMBER}"
+          git push
