@@ -8,19 +8,26 @@ import com.zipdaproperty.domain.property.response.PropertyMyListResponse;
 import com.zipdaproperty.global.context.ActorContext;
 import com.zipdaproperty.global.context.constant.ActorRole;
 import com.zipdaproperty.global.error.custom.BusinessException;
+import com.zipdaproperty.global.error.custom.business.FileManagedException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PropertyMyListService {
 
     private final PropertyMyListQueryRepository
             propertyMyListQueryRepository;
+
+    private final PropertyPublicImageService
+            propertyPublicImageService;
 
     @Transactional(readOnly = true)
     public PropertyMyListResponse findMyProperties(
@@ -53,9 +60,19 @@ public class PropertyMyListService {
                         .limit(size)
                         .toList();
 
+        Map<Long, String> representativeImageUrls =
+                findRepresentativeImageUrls(visibleRows);
+
         List<PropertyMyListItemResponse> items =
                 visibleRows.stream()
-                        .map(this::toItemResponse)
+                        .map(row ->
+                                toItemResponse(
+                                        row,
+                                        representativeImageUrls.get(
+                                                row.propertyId()
+                                        )
+                                )
+                        )
                         .toList();
 
         String nextCursor =
@@ -118,8 +135,39 @@ public class PropertyMyListService {
                 .encode();
     }
 
+    private Map<Long, String> findRepresentativeImageUrls(
+            List<PropertyMyListQueryRow> rows
+    ) {
+        if (rows == null || rows.isEmpty()) {
+            return Map.of();
+        }
+
+        try {
+            return propertyPublicImageService
+                    .findRepresentativeImageUrls(
+                            rows.stream()
+                                    .map(
+                                            PropertyMyListQueryRow::propertyId
+                                    )
+                                    .toList()
+                    );
+        } catch (FileManagedException exception) {
+            log.warn(
+                    "내 매물 대표 이미지 URL 생성에 실패하여 기본 이미지로 응답합니다. propertyIds={}",
+                    rows.stream()
+                            .map(
+                                    PropertyMyListQueryRow::propertyId
+                            )
+                            .toList()
+            );
+
+            return Map.of();
+        }
+    }
+
     private PropertyMyListItemResponse toItemResponse(
-            PropertyMyListQueryRow row
+            PropertyMyListQueryRow row,
+            String representativeImageUrl
     ) {
         return new PropertyMyListItemResponse(
                 row.propertyId(),
@@ -135,6 +183,7 @@ public class PropertyMyListService {
                 row.publicationStatus(),
                 row.transactionStatus(),
                 row.verificationStatus(),
+                representativeImageUrl,
                 row.updatedAt()
         );
     }

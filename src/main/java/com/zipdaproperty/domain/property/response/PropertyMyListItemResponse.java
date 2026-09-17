@@ -40,6 +40,8 @@ public record PropertyMyListItemResponse(
 
         VerificationStatus verificationStatus,
 
+        String representativeImageUrl,
+
         Instant updatedAt
 
 ) {
