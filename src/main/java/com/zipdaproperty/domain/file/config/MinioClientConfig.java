@@ -12,11 +12,13 @@ public class MinioClientConfig {
     public MinioClient minioClient(
             @Value("${minio.minio-endpoint}") String endpoint,
             @Value("${minio.minio-access-key}") String accessKey,
-            @Value("${minio.minio-secret-key}") String secretKey
+            @Value("${minio.minio-secret-key}") String secretKey,
+            @Value("${minio.minio-region}") String region
     ) {
         return MinioClient.builder()
                 .endpoint(endpoint)
                 .credentials(accessKey, secretKey)
+                .region(region)
                 .build();
     }
 }
