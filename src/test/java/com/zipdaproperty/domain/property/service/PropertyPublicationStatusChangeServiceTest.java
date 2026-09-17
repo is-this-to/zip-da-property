@@ -5,6 +5,7 @@ import com.zipdaproperty.domain.property.audit.service.PropertyAuditEventRecorde
 import com.zipdaproperty.domain.property.command.PropertyPublicationStatusChangeCommand;
 import com.zipdaproperty.domain.property.constant.PropertyStatusType;
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
+import com.zipdaproperty.domain.property.constant.PublisherType;
 import com.zipdaproperty.domain.property.constant.TransactionStatus;
 import com.zipdaproperty.domain.property.constant.VerificationStatus;
 import com.zipdaproperty.domain.property.entity.Property;
@@ -90,6 +91,24 @@ class PropertyPublicationStatusChangeServiceTest {
                     ActorRole.CS_ADMIN,
                     "publication-admin"
             );
+
+    @Test
+    void change_rejectsMismatchedAndExpiredVerificationForReviewAndRepublish() {
+        for (PublicationStatus current : new PublicationStatus[]{PublicationStatus.IN_REVIEW, PublicationStatus.HIDDEN}) {
+            for (VerificationStatus status : new VerificationStatus[]{
+                    VerificationStatus.UNVERIFIED, VerificationStatus.IN_REVIEW,
+                    VerificationStatus.REJECTED, VerificationStatus.EXPIRED,
+                    VerificationStatus.TENANT_VERIFIED}) {
+                Property property = prepareProperty(current, TransactionStatus.AVAILABLE);
+                when(property.getPublisherType()).thenReturn(PublisherType.DIRECT_OWNER);
+                when(property.getVerificationStatus()).thenReturn(status);
+                assertThatThrownBy(() -> service.change(PROPERTY_ID,
+                        request(PublicationStatus.PUBLISHED), adminContext))
+                        .isInstanceOf(BusinessException.class);
+            }
+        }
+        verifyNoPersistenceOrEvents();
+    }
 
     @Test
     void change_adminApproves_savesRevisionHistoryAuditAndKafkaEvent() {
@@ -603,7 +622,9 @@ class PropertyPublicationStatusChangeServiceTest {
                 afterStatus
         );
         when(property.getVerificationStatus())
-                .thenReturn(VerificationStatus.UNVERIFIED);
+                .thenReturn(afterStatus == PublicationStatus.PUBLISHED
+                        ? VerificationStatus.OWNER_VERIFIED : VerificationStatus.UNVERIFIED);
+        when(property.getPublisherType()).thenReturn(PublisherType.DIRECT_OWNER);
         when(objectMapper.writeValueAsString(property)).thenReturn(
                 "{\"publicationStatus\":\"" + beforeStatus + "\"}",
                 "{\"publicationStatus\":\"" + afterStatus + "\"}"

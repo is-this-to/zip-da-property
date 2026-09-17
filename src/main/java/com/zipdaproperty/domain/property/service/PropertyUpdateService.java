@@ -1,5 +1,6 @@
 package com.zipdaproperty.domain.property.service;
 
+import com.zipdaproperty.domain.apartment.service.ApartmentComplexValidationService;
 import com.zipdaproperty.domain.image.service.PropertyImageSyncService;
 import com.zipdaproperty.domain.image.service.PropertyImageSyncService.SyncPlan;
 import com.zipdaproperty.domain.option.command.PropertyOptionCreateCommand;
@@ -86,6 +87,9 @@ public class PropertyUpdateService {
     private final MemberWritePermissionService
             memberWritePermissionService;
 
+    private final ApartmentComplexValidationService
+            apartmentComplexValidationService;
+
     @Transactional
     public PropertyUpdateResponse update(
             Long propertyId,
@@ -136,6 +140,12 @@ public class PropertyUpdateService {
         propertyUpdatePolicy.validate(command);
 
         validateRegion(command.regionId());
+
+        apartmentComplexValidationService.validateForProperty(
+                command.propertyType(),
+                command.apartmentComplexId(),
+                command.regionId()
+        );
 
         propertyPricePolicy.validate(
                 command.transactionType(),

@@ -40,6 +40,12 @@ public final class PropertyAuditActionCode {
     public static final String PROPERTY_REPORT_DETAIL_VIEWED =
             "PROPERTY_REPORT_DETAIL_VIEWED";
 
+    public static final String PROPERTY_VERIFICATION_DETAIL_VIEWED =
+            "PROPERTY_VERIFICATION_DETAIL_VIEWED";
+
+    public static final String PROPERTY_PUBLICATION_REVIEW_DETAIL_VIEWED =
+            "PROPERTY_PUBLICATION_REVIEW_DETAIL_VIEWED";
+
     public static final String PROPERTY_REPORT_STATUS_CHANGED =
             "PROPERTY_REPORT_STATUS_CHANGED";
 

@@ -1,7 +1,9 @@
 package com.zipdaproperty.domain.property.service;
 
 import com.zipdaproperty.domain.property.constant.PublicationStatus;
+import com.zipdaproperty.domain.property.constant.PublisherType;
 import com.zipdaproperty.domain.property.constant.TransactionStatus;
+import com.zipdaproperty.domain.property.constant.VerificationStatus;
 import com.zipdaproperty.global.error.custom.BusinessException;
 import com.zipdaproperty.global.response.constant.CustomResponseCode;
 import org.springframework.stereotype.Component;
@@ -63,6 +65,34 @@ public class PublicationStatusPolicy {
         return ALLOWED_TRANSITIONS
                 .getOrDefault(currentStatus, Set.of())
                 .contains(targetStatus);
+    }
+
+    public void validatePublicationVerification(
+            PublicationStatus currentStatus,
+            PublicationStatus targetStatus,
+            PublisherType publisherType,
+            VerificationStatus verificationStatus
+    ) {
+        if (targetStatus != PublicationStatus.PUBLISHED) {
+            return;
+        }
+        if (publisherType == null) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_STATUS_TRANSITION,
+                    "등록주체에 맞는 유효한 매물 검증 후 공개할 수 있습니다."
+            );
+        }
+        VerificationStatus required = switch (publisherType) {
+            case DIRECT_OWNER -> VerificationStatus.OWNER_VERIFIED;
+            case DIRECT_TENANT -> VerificationStatus.TENANT_VERIFIED;
+            case AGENT_BROKERAGE -> VerificationStatus.AGENT_VERIFIED;
+        };
+        if (verificationStatus != required) {
+            throw new BusinessException(
+                    CustomResponseCode.INVALID_STATUS_TRANSITION,
+                    "등록주체에 맞는 유효한 매물 검증 후 공개할 수 있습니다."
+            );
+        }
     }
 
     private BusinessException invalidTransition() {

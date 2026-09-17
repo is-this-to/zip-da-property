@@ -128,6 +128,12 @@ public class PropertyPublicationStatusChangeService {
                 targetStatus,
                 property.getTransactionStatus()
         );
+        publicationStatusPolicy.validatePublicationVerification(
+                beforeStatus,
+                targetStatus,
+                property.getPublisherType(),
+                property.getVerificationStatus()
+        );
 
         String beforeSnapshotJson =
                 objectMapper.writeValueAsString(property);
