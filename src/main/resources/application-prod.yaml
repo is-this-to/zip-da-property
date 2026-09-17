@@ -126,6 +126,7 @@ minio:
   minio-bucket: ${MINIO_BUCKET}
   minio-access-key: ${MINIO_ACCESS_KEY}
   minio-secret-key: ${MINIO_SECRET_KEY}
+  minio-region: ${MINIO_REGION:us-east-1}
   minio-image-path: ${MINIO_IMAGE_PATH}
   allow-image-extensions: [
     "image/jpg",

@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/properties")
+@RequestMapping("/api/property/properties")
 public class PropertyPublicDetailController {
 
     private final PropertyPublicDetailService propertyPublicDetailService;
