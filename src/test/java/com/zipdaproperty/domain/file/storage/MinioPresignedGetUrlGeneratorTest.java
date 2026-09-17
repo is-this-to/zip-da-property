@@ -44,4 +44,21 @@ class MinioPresignedGetUrlGeneratorTest {
         assertThat(captor.getValue().method()).isEqualTo(Method.GET);
         assertThat(captor.getValue().expiry()).isEqualTo(900);
     }
+
+    @Test
+    void generate_clientHasRegion_createsUrlWithoutContactingMinio() {
+        MinioClient offlineClient = MinioClient.builder()
+                .endpoint("http://127.0.0.1:1")
+                .credentials("test-access-key", "test-secret-key")
+                .region("us-east-1")
+                .build();
+        MinioPresignedGetUrlGenerator generator =
+                new MinioPresignedGetUrlGenerator(offlineClient);
+        ReflectionTestUtils.setField(generator, "bucket", "test-bucket");
+
+        String imageUrl = generator.generate("property/image.jpg");
+
+        assertThat(imageUrl)
+                .startsWith("http://127.0.0.1:1/test-bucket/property/image.jpg?");
+    }
 }
