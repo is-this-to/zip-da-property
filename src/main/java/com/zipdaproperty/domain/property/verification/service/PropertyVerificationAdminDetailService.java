@@ -53,7 +53,8 @@ public class PropertyVerificationAdminDetailService {
       ActorContext actor
   ) {
     access.requireAdmin(actor);
-    String reason = access.requireReason(auditReason);
+    // String reason = access.requireReason(auditReason);
+    String reason = auditReason;
 
     PropertyVerification verification = verificationRepository
         .findByPropertyVerificationIdAndDeletedAtIsNull(id)

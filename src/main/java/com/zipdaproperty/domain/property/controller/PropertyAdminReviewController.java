@@ -27,15 +27,15 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/admin")
+@RequestMapping("/api/property/admin")
 public class PropertyAdminReviewController {
     private final PropertyVerificationAdminListService verificationListService;
     private final PropertyVerificationAdminDetailService verificationDetailService;
     private final PropertyPublicationAdminListService publicationListService;
     private final PropertyPublicationAdminDetailService publicationDetailService;
 
-    @GetMapping("/property-verifications")
     @PreAuthorize("hasAnyRole('CS_ADMIN', 'SUPER_ADMIN')")
+    @GetMapping("/property-verifications")
     public ResponseEntity<GlobalResponseDTO<PropertyVerificationAdminListResponse>> verifications(
             @Valid @ModelAttribute PropertyVerificationAdminListRequest request,
             @Parameter(hidden = true) ActorContext actor
@@ -43,8 +43,8 @@ public class PropertyAdminReviewController {
         return ResponseEntity.ok(GlobalResponseDTO.success(verificationListService.find(request, actor)));
     }
 
-    @GetMapping("/property-verifications/{verificationId}")
     @PreAuthorize("hasAnyRole('CS_ADMIN', 'SUPER_ADMIN')")
+    @GetMapping("/property-verifications/{verificationId}")
     public ResponseEntity<GlobalResponseDTO<PropertyVerificationAdminDetailResponse>> verification(
             @PathVariable @Positive Long verificationId,
             @RequestHeader(value = "X-Audit-Reason", required = false) String auditReason,
@@ -54,8 +54,8 @@ public class PropertyAdminReviewController {
                 verificationDetailService.find(verificationId, auditReason, actor)));
     }
 
-    @GetMapping("/property-publication-reviews")
     @PreAuthorize("hasAnyRole('CS_ADMIN', 'SUPER_ADMIN')")
+    @GetMapping("/property-publication-reviews")
     public ResponseEntity<GlobalResponseDTO<PropertyPublicationAdminListResponse>> publications(
             @Valid @ModelAttribute PropertyPublicationAdminListRequest request,
             @Parameter(hidden = true) ActorContext actor
@@ -63,8 +63,8 @@ public class PropertyAdminReviewController {
         return ResponseEntity.ok(GlobalResponseDTO.success(publicationListService.find(request, actor)));
     }
 
-    @GetMapping("/property-publication-reviews/{propertyId}")
     @PreAuthorize("hasAnyRole('CS_ADMIN', 'SUPER_ADMIN')")
+    @GetMapping("/property-publication-reviews/{propertyId}")
     public ResponseEntity<GlobalResponseDTO<PropertyPublicationAdminDetailResponse>> publication(
             @PathVariable @Positive Long propertyId,
             @RequestHeader(value = "X-Audit-Reason", required = false) String auditReason,

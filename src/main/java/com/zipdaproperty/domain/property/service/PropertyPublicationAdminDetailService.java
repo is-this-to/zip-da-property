@@ -35,7 +35,8 @@ public class PropertyPublicationAdminDetailService {
       ActorContext actor
   ) {
     access.requireAdmin(actor);
-    String reason = access.requireReason(auditReason);
+    // String reason = access.requireReason(auditReason);
+    String reason = auditReason;
 
     Property property = propertyRepository
         .findByPropertyIdAndDeletedAtIsNull(propertyId)
